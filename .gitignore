@@ -1,3 +1,9 @@
+# Halo源代码目录
+halo/
+
+# 主题源代码目录
+halo-theme-joe2.0/
+
 # 环境变量文件
 .env
 .env.local
@@ -12,9 +18,6 @@ backups/
 halo-data/
 mysql-data/
 redis-data/
-
-# 主题目录（如果不想提交主题）
-themes/
 
 # 操作系统文件
 .DS_Store
