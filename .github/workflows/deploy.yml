@@ -1,10 +1,15 @@
-name: Deploy to Server
+name: Deploy Full Stack
 
 on:
   push:
     branches:
       - main
       - master
+    paths-ignore:
+      - "services/**"
+      - "plugins/**"
+      - ".github/workflows/deploy-services.yml"
+      - ".github/workflows/deploy-plugins.yml"
   workflow_dispatch:
 
 jobs:
