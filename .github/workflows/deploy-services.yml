@@ -34,79 +34,11 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/halo-blog
-            
-            # Pull latest code
             git fetch origin
             git checkout main
             git pull origin main
             
-            # Install Go if needed
-            if ! command -v go &> /dev/null; then
-              wget -q https://go.dev/dl/go1.22.5.linux-amd64.tar.gz -O /tmp/go.tar.gz
-              tar -C /usr/local -xzf /tmp/go.tar.gz
-              rm /tmp/go.tar.gz
-            fi
-            export PATH=$PATH:/usr/local/go/bin
-            
-            # Build and deploy each service
-            for service in comment-filter auto-reply server-monitor; do
-              echo "Building $service..."
-              cd /opt/halo-blog/services/$service/cmd
-              CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o /tmp/$service .
-              
-              mkdir -p /tmp/build
-              cp /tmp/$service /tmp/build/
-              
-              if [ "$service" = "comment-filter" ]; then
-                cp -r /opt/halo-blog/services/comment-filter/data /tmp/build/ 2>/dev/null || true
-                cat > /tmp/build/Dockerfile << 'DF'
-FROM alpine:3.19
-RUN apk add --no-cache tzdata
-RUN addgroup -S app && adduser -S -G app app
-WORKDIR /app
-COPY comment-filter /usr/local/bin/
-COPY data /app/data 2>/dev/null || true
-RUN chmod +x /usr/local/bin/comment-filter
-ENV PORT=8091 WORDS_FILE=/app/data/sensitive_words.txt TZ=Asia/Shanghai
-EXPOSE 8091
-USER app
-ENTRYPOINT ["/usr/local/bin/comment-filter"]
-DF
-              elif [ "$service" = "auto-reply" ]; then
-                cp -r /opt/halo-blog/services/auto-reply/config /tmp/build/ 2>/dev/null || true
-                cat > /tmp/build/Dockerfile << 'DF'
-FROM alpine:3.19
-RUN apk add --no-cache tzdata
-RUN addgroup -S app && adduser -S -G app app
-WORKDIR /app
-COPY auto-reply /usr/local/bin/
-COPY config /app/config 2>/dev/null || true
-RUN chmod +x /usr/local/bin/auto-reply
-ENV PORT=8092 RULES_FILE=/app/config/rules.json TZ=Asia/Shanghai
-EXPOSE 8092
-USER app
-ENTRYPOINT ["/usr/local/bin/auto-reply"]
-DF
-              else
-                mkdir -p /tmp/build/config
-                cat > /tmp/build/Dockerfile << 'DF'
-FROM alpine:3.19
-RUN apk add --no-cache tzdata
-RUN addgroup -S app && adduser -S -G app app
-RUN mkdir -p /app/config && chown -R app:app /app
-WORKDIR /app
-COPY server-monitor /usr/local/bin/
-RUN chmod +x /usr/local/bin/server-monitor
-ENV PORT=8093 TZ=Asia/Shanghai
-EXPOSE 8093
-USER app
-ENTRYPOINT ["/usr/local/bin/server-monitor"]
-DF
-              fi
-              
-              docker build -t ghcr.io/ppp-blog/$service:latest /tmp/build/
-            done
-
+            # Build and restart services
             cd /opt/halo-blog
             docker-compose up -d --no-deps comment-filter auto-reply server-monitor
-            echo "Services deployed!"
+            echo "Services restarted with existing images"
