@@ -15,7 +15,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -30,16 +29,16 @@ jobs:
           script: |
             cd /opt/halo-blog
             
-            # 拉取最新代码
+            # Pull latest code
             git fetch origin
-            git reset --hard origin/main
+            git checkout main
+            git pull origin main
             
-            # 重启Docker服务
+            # Restart Docker services
             docker-compose down
-            docker-compose pull
             docker-compose up -d
             
-            # 清理未使用的镜像
-            docker image prune -f
+            # Wait for services
+            sleep 10
             
-            echo "Deployment completed successfully!"
+            echo "Deployment completed!"
