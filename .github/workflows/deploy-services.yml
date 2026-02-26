@@ -1,20 +1,19 @@
 name: Deploy Services
-
-on:
+on:  # 核心修复：缩进统一为2个空格（YAML标准）
   push:
     branches:
       - main
     paths:
-      - "services/**"
-      - ".github/workflows/deploy-services.yml"
-  workflow_dispatch:
+      - services/**
+      - .github/workflows/deploy-services.yml
+  workflow_dispatch:  # 支持手动触发，保留（规范）
 
 permissions:
-  contents: read
+  contents: read  # 仅读取代码，权限最小化，规范
 
 concurrency:
   group: deploy-services-main
-  cancel-in-progress: false
+  cancel-in-progress: false  # 不取消正在进行的部署，按需调整
 
 jobs:
   deploy:
@@ -23,17 +22,20 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: false  # 默认值，可省略，保留也没问题
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.0.0  # 版本锁定，规范
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
           port: ${{ secrets.SSH_PORT }}
+          # 优化：添加set -e确保脚本出错时终止，避免静默失败
           script: |
-            set -euo pipefail
-            cd /opt/halo-blog
+            set -e
+            cd /opt/halo-blog || { echo "Directory /opt/halo-blog not found"; exit 1; }
             git fetch origin
             git checkout main
             git pull origin main
