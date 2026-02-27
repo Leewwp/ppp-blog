@@ -21,8 +21,8 @@ public class FilterServiceClient {
 
     private final WebClient webClient;
 
-    public FilterServiceClient(WebClient.Builder webClientBuilder) {
-        this.webClient = webClientBuilder.build();
+    public FilterServiceClient() {
+        this.webClient = WebClient.builder().build();
     }
 
     public Mono<CommentFilterResponse> filter(String filterServiceUrl, String content, String author) {

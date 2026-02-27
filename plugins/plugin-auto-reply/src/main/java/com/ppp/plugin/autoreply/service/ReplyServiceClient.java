@@ -22,8 +22,8 @@ public class ReplyServiceClient {
 
     private final WebClient webClient;
 
-    public ReplyServiceClient(WebClient.Builder webClientBuilder) {
-        this.webClient = webClientBuilder.build();
+    public ReplyServiceClient() {
+        this.webClient = WebClient.builder().build();
     }
 
     public Mono<AutoReplyResponse> generateReply(String replyServiceUrl, AutoReplyRequest request) {
