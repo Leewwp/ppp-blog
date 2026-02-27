@@ -8,8 +8,8 @@ group = "com.ppp.plugin"
 version = "1.0.0"
 
 repositories {
-    maven { url("https://maven.aliyun.com/repository/public/") }
-    maven { url("https://maven.aliyun.com/repository/gradle-plugin/") }
+    maven { url = uri("https://maven.aliyun.com/repository/public/") }
+    maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin/") }
     mavenCentral()
 }
 
