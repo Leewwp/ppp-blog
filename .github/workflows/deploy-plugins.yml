@@ -1,4 +1,4 @@
-name: Deploy Halo Plugins
+﻿name: Deploy Halo Plugins
 
 on:
   push:
@@ -22,19 +22,21 @@ jobs:
           distribution: "temurin"
 
       - name: Set up Gradle
-        uses: gradle/gradle-build-action@v2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
 
       - name: Build plugin-comment-moderation
         working-directory: plugins/plugin-comment-moderation
-        run: ../../halo/gradlew build
+        run: gradle build
 
       - name: Build plugin-stats-dashboard
         working-directory: plugins/plugin-stats-dashboard
-        run: ../../halo/gradlew build
+        run: gradle build
 
       - name: Build plugin-auto-reply
         working-directory: plugins/plugin-auto-reply
-        run: ../../halo/gradlew build
+        run: gradle build
 
       - name: Upload artifacts (backup)
         uses: actions/upload-artifact@v4
@@ -60,14 +62,14 @@ jobs:
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
-          privateKey: ${{ secrets.SSH_PRIVATE_KEY }}  # 注意参数名改为privateKey（仅这一处差异）
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          local: "plugins/plugin-comment-moderation/build/libs/*.jar,plugins/plugin-stats-dashboard/build/libs/*.jar,plugins/plugin-auto-reply/build/libs/*.jar"  # 参数名改为local（替代source）
-          remote: "/tmp/halo-plugins/"  # 参数名改为remote（替代target）
+          source: "plugins/plugin-comment-moderation/build/libs/*.jar,plugins/plugin-stats-dashboard/build/libs/*.jar,plugins/plugin-auto-reply/build/libs/*.jar"
+          target: "/tmp/halo-plugins/"
           strip_components: 4
-          timeout: 300s  # 此处需用秒为单位（5m=300s）
-          command_timeout: 900s  # 15m=900s
-          debug: true
+          timeout: 120s
+          command_timeout: 20m
+          debug: false
           overwrite: true
 
       - name: Install plugins and restart Halo
