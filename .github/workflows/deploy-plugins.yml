@@ -56,19 +56,15 @@ jobs:
             mkdir -p /tmp/halo-plugins
 
       - name: Upload plugin JARs to server
-        uses: wlixcc/SCP-actions@v1.0.5  # 国内更稳定的SCP Action
+        uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
-          privateKey: ${{ secrets.SSH_PRIVATE_KEY }}  # 注意参数名改为privateKey（仅这一处差异）
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          local: "plugins/plugin-comment-moderation/build/libs/*.jar,plugins/plugin-stats-dashboard/build/libs/*.jar,plugins/plugin-auto-reply/build/libs/*.jar"  # 参数名改为local（替代source）
-          remote: "/tmp/halo-plugins/"  # 参数名改为remote（替代target）
+          source: "plugins/plugin-comment-moderation/build/libs/*.jar,plugins/plugin-stats-dashboard/build/libs/*.jar,plugins/plugin-auto-reply/build/libs/*.jar"
+          target: "/tmp/halo-plugins/"
           strip_components: 4
-          timeout: 300s  # 此处需用秒为单位（5m=300s）
-          command_timeout: 900s  # 15m=900s
-          debug: true
-          overwrite: true
 
       - name: Install plugins and restart Halo
         uses: appleboy/ssh-action@v1.0.0
