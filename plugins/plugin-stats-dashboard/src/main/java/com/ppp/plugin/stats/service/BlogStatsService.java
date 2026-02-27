@@ -6,7 +6,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -21,16 +20,19 @@ import run.halo.app.extension.ReactiveExtensionClient;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class BlogStatsService {
 
     private static final Duration CACHE_TTL = Duration.ofSeconds(60);
     private static final ListOptions EMPTY_OPTIONS = ListOptions.builder().build();
 
     private final ReactiveExtensionClient extensionClient;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final AtomicReference<CacheEntry> cache = new AtomicReference<>(CacheEntry.expired());
+
+    public BlogStatsService(ReactiveExtensionClient extensionClient) {
+        this.extensionClient = extensionClient;
+    }
 
     /**
      * Returns cached stats when valid, otherwise refreshes from Halo.
