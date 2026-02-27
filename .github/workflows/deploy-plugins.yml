@@ -61,9 +61,6 @@ jobs:
               exit 1
             fi
 
-            PLUGIN_DIR="/opt/halo-blog/halo-data/plugins"
-            mkdir -p "$PLUGIN_DIR"
-
             cd /opt/halo-blog
             git fetch origin
             git checkout main
@@ -81,37 +78,77 @@ jobs:
             gradle build --no-daemon
             ls -lh /opt/halo-blog/plugins/plugin-auto-reply/build/libs/*.jar
 
-            rm -f "$PLUGIN_DIR"/plugin-comment-moderation-*.jar
-            rm -f "$PLUGIN_DIR"/plugin-stats-dashboard-*.jar
-            rm -f "$PLUGIN_DIR"/plugin-auto-reply-*.jar
-
-            cp /opt/halo-blog/plugins/plugin-comment-moderation/build/libs/*.jar "$PLUGIN_DIR/"
-            cp /opt/halo-blog/plugins/plugin-stats-dashboard/build/libs/*.jar "$PLUGIN_DIR/"
-            cp /opt/halo-blog/plugins/plugin-auto-reply/build/libs/*.jar "$PLUGIN_DIR/"
-
-            echo "Host plugin directory files:"
-            ls -lh "$PLUGIN_DIR"
-
-            cd /opt/halo-blog
-            docker-compose restart halo
-            sleep 10
-
-            echo "Container plugin directory files:"
-            docker exec halo ls -lh /root/.halo2/plugins/
-
-            echo "Plugins deployed and Halo restarted!"
-            sleep 30
-
-            echo "Recent Halo logs related to plugin loading:"
-            docker logs --since 3m halo | grep -Ei "plugin|pf4j|failed|error|exception" || true
-
             HALO_URL="${{ secrets.HALO_EXTERNAL_URL }}"
             TOKEN="${{ secrets.HALO_API_TOKEN }}"
-            if [ -n "$HALO_URL" ] && [ -n "$TOKEN" ]; then
-              for PLUGIN_NAME in plugin-comment-moderation plugin-stats-dashboard plugin-auto-reply; do
-                curl -s -X PUT "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/${PLUGIN_NAME}/plugin-state" \
-                  -H "Authorization: Bearer ${TOKEN}" \
-                  -H "Content-Type: application/json" \
-                  -d '{"enable": true}' || echo "Warning: Failed to enable ${PLUGIN_NAME}"
-              done
+            if [ -z "$TOKEN" ]; then
+              echo "HALO_API_TOKEN is required for install/upgrade plugin API."
+              exit 1
             fi
+            if [ -z "$HALO_URL" ]; then
+              HALO_URL="http://127.0.0.1:8090"
+            fi
+
+            install_or_upgrade_plugin() {
+              local name="$1"
+              local jar="$2"
+              local status
+              local code
+              local body_file="/tmp/${name}-api-response.json"
+
+              echo "Processing ${name} with jar ${jar}"
+              status=$(curl -sS -o /dev/null -w "%{http_code}" \
+                -H "Authorization: Bearer ${TOKEN}" \
+                "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/${name}" || true)
+
+              if [ "$status" = "200" ]; then
+                echo "Plugin ${name} exists, upgrading..."
+                code=$(curl -sS -o "${body_file}" -w "%{http_code}" -X POST \
+                  "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/${name}/upgrade" \
+                  -H "Authorization: Bearer ${TOKEN}" \
+                  -F "source=FILE" \
+                  -F "file=@${jar}")
+              else
+                echo "Plugin ${name} not found, installing..."
+                code=$(curl -sS -o "${body_file}" -w "%{http_code}" -X POST \
+                  "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/install" \
+                  -H "Authorization: Bearer ${TOKEN}" \
+                  -F "source=FILE" \
+                  -F "file=@${jar}")
+              fi
+
+              if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+                echo "Install/upgrade failed for ${name}, http=${code}"
+                cat "${body_file}" || true
+                exit 1
+              fi
+
+              code=$(curl -sS -o "${body_file}" -w "%{http_code}" -X PUT \
+                "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/${name}/plugin-state" \
+                -H "Authorization: Bearer ${TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d '{"enable": true, "async": false}')
+
+              if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+                echo "Enable failed for ${name}, http=${code}"
+                cat "${body_file}" || true
+                exit 1
+              fi
+            }
+
+            install_or_upgrade_plugin \
+              "plugin-comment-moderation" \
+              "$(ls -1 /opt/halo-blog/plugins/plugin-comment-moderation/build/libs/*.jar | head -n 1)"
+            install_or_upgrade_plugin \
+              "plugin-stats-dashboard" \
+              "$(ls -1 /opt/halo-blog/plugins/plugin-stats-dashboard/build/libs/*.jar | head -n 1)"
+            install_or_upgrade_plugin \
+              "plugin-auto-reply" \
+              "$(ls -1 /opt/halo-blog/plugins/plugin-auto-reply/build/libs/*.jar | head -n 1)"
+
+            echo "Query plugin list after deployment:"
+            curl -sS -X GET "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins" \
+              -H "Authorization: Bearer ${TOKEN}" || true
+
+            echo "Recent Halo logs related to plugin loading:"
+            docker logs --since 5m halo 2>&1 | grep -Ei \
+              "plugin|pf4j|plugin-auto-reply|plugin-comment-moderation|plugin-stats-dashboard|failed|error|exception" || true
