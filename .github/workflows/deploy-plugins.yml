@@ -22,21 +22,19 @@ jobs:
           distribution: "temurin"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.10.2
+        uses: gradle/gradle-build-action@v2
 
       - name: Build plugin-comment-moderation
         working-directory: plugins/plugin-comment-moderation
-        run: gradle build
+        run: ../../halo/gradlew build
 
       - name: Build plugin-stats-dashboard
         working-directory: plugins/plugin-stats-dashboard
-        run: gradle build
+        run: ../../halo/gradlew build
 
       - name: Build plugin-auto-reply
         working-directory: plugins/plugin-auto-reply
-        run: gradle build
+        run: ../../halo/gradlew build
 
       - name: Upload artifacts (backup)
         uses: actions/upload-artifact@v4
@@ -58,7 +56,7 @@ jobs:
             mkdir -p /tmp/halo-plugins
 
       - name: Upload plugin JARs to server
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v0.5.1  # 升级到最新稳定版（替代v0.1.7）
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
@@ -67,6 +65,10 @@ jobs:
           source: "plugins/plugin-comment-moderation/build/libs/*.jar,plugins/plugin-stats-dashboard/build/libs/*.jar,plugins/plugin-auto-reply/build/libs/*.jar"
           target: "/tmp/halo-plugins/"
           strip_components: 4
+          timeout: 5m  # 延长SSH连接超时（从30s→5分钟）
+          command_timeout: 15m  # 延长传输命令超时（从10m→15分钟）
+          debug: true  # 开启调试模式，能看到传输细节（排查用，解决后可关闭）
+          overwrite: true  # 覆盖目标文件（避免文件已存在导致卡壳）
 
       - name: Install plugins and restart Halo
         uses: appleboy/ssh-action@v1.0.0
