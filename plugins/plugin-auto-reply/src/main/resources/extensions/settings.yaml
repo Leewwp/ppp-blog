@@ -1,0 +1,26 @@
+apiVersion: v1alpha1
+kind: Setting
+metadata:
+  name: plugin-auto-reply-settings
+spec:
+  forms:
+    - group: basic
+      label: 基础设置
+      formSchema:
+        - $formkit: switch
+          name: enabled
+          label: 启用自动回复
+          value: true
+          help: 是否启用评论自动回复功能
+        - $formkit: text
+          name: replyServiceUrl
+          label: 回复服务地址
+          value: "http://auto-reply:8092"
+          validation: required|url
+          help: auto-reply 微服务地址，不包含 /api/v1/reply 路径
+        - $formkit: text
+          name: replyAuthorName
+          label: 回复作者显示名
+          value: "博主"
+          validation: required
+          help: 自动回复在前台展示的作者名称
