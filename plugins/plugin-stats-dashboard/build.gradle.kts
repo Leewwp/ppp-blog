@@ -26,7 +26,6 @@ dependencies {
     compileOnly("run.halo.app:api:$haloVersion")
 
     compileOnly("org.springframework.boot:spring-boot-starter-webflux")
-    compileOnly("org.springframework.boot:spring-boot-starter-data-redis-reactive")
 
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")

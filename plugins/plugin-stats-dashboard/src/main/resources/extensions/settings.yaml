@@ -9,12 +9,12 @@ spec:
       formSchema:
         - $formkit: switch
           name: redisEnabled
-          label: Redis Enabled
+          label: Tracking Enabled
           value: true
-          help: Enable Redis-based visitor and page-view tracking.
+          help: Enable visitor and page-view tracking.
         - $formkit: number
           name: visitorTimeout
           label: Visitor Timeout (Seconds)
           value: 300
           validation: required|number|min:30|max:3600
-          help: TTL for each online visitor IP key.
+          help: Active window for each online visitor IP.
