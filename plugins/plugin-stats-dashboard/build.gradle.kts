@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     java
     id("io.freefair.lombok") version "8.13"
     id("run.halo.plugin.devtools") version "0.6.1"
@@ -23,7 +23,7 @@ repositories {
 dependencies {
     implementation(platform("run.halo.tools.platform:plugin:$haloVersion"))
 
-    compileOnly("run.halo.app:plugin-api:$haloVersion")
+    compileOnly("run.halo.app:api:$haloVersion")
 
     implementation("org.springframework.boot:spring-boot-starter-webflux")
     implementation("org.springframework.boot:spring-boot-starter-data-redis-reactive")
@@ -31,7 +31,7 @@ dependencies {
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
 
-    testImplementation("run.halo.app:plugin-api:$haloVersion")
+    testImplementation("run.halo.app:api:$haloVersion")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
