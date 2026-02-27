@@ -1,0 +1,100 @@
+name: Deploy Halo Plugins
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - plugins/**
+  workflow_dispatch:
+
+jobs:
+  deploy-plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Set up Gradle
+        uses: gradle/gradle-build-action@v2
+
+      - name: Build plugin-comment-moderation
+        working-directory: plugins/plugin-comment-moderation
+        run: ../../halo/gradlew build
+
+      - name: Build plugin-stats-dashboard
+        working-directory: plugins/plugin-stats-dashboard
+        run: ../../halo/gradlew build
+
+      - name: Build plugin-auto-reply
+        working-directory: plugins/plugin-auto-reply
+        run: ../../halo/gradlew build
+
+      - name: Upload artifacts (backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo-plugins
+          path: |
+            plugins/*/build/libs/*.jar
+          retention-days: 30
+
+      - name: Prepare upload directory on server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -e
+            mkdir -p /tmp/halo-plugins
+
+      - name: Upload plugin JARs to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "plugins/plugin-comment-moderation/build/libs/*.jar,plugins/plugin-stats-dashboard/build/libs/*.jar,plugins/plugin-auto-reply/build/libs/*.jar"
+          target: "/tmp/halo-plugins/"
+          strip_components: 4
+
+      - name: Install plugins and restart Halo
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -e
+
+            PLUGIN_DIR="/opt/halo-blog/halo-data/plugins"
+            mkdir -p "$PLUGIN_DIR"
+
+            cp /tmp/halo-plugins/*.jar "$PLUGIN_DIR/" 2>/dev/null || true
+            rm -rf /tmp/halo-plugins
+
+            cd /opt/halo-blog
+            docker-compose restart halo
+
+            echo "Plugins deployed and Halo restarted!"
+            sleep 30
+
+            HALO_URL="${{ secrets.HALO_EXTERNAL_URL }}"
+            TOKEN="${{ secrets.HALO_API_TOKEN }}"
+            if [ -n "$HALO_URL" ] && [ -n "$TOKEN" ]; then
+              for PLUGIN_NAME in plugin-comment-moderation plugin-stats-dashboard plugin-auto-reply; do
+                curl -s -X PUT "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/${PLUGIN_NAME}/plugin-state" \
+                  -H "Authorization: Bearer ${TOKEN}" \
+                  -H "Content-Type: application/json" \
+                  -d '{"enable": true}' || echo "Warning: Failed to enable ${PLUGIN_NAME}"
+              done
+            fi
