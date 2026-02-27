@@ -1,0 +1,31 @@
+apiVersion: v1alpha1
+kind: Setting
+metadata:
+  name: plugin-comment-moderation-settings
+spec:
+  forms:
+    - group: basic
+      label: 基础设置
+      formSchema:
+        - $formkit: switch
+          name: enabled
+          label: 启用审核
+          value: true
+          help: 是否启用评论审核插件
+        - $formkit: text
+          name: filterServiceUrl
+          label: 过滤服务地址
+          value: "http://comment-filter:8091"
+          validation: required|url
+          help: 评论过滤服务地址，不包含 /api/v1/filter 路径
+        - $formkit: select
+          name: filterStrategy
+          label: 过滤策略
+          value: REJECT
+          options:
+            - label: 直接拒绝
+              value: REJECT
+            - label: 标记待处理
+              value: MARK
+            - label: 仅记录日志
+              value: LOG_ONLY
