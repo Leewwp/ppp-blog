@@ -91,26 +91,21 @@ jobs:
             install_or_upgrade_plugin() {
               local name="$1"
               local jar="$2"
-              local status
               local code
               local body_file="/tmp/${name}-api-response.json"
 
               echo "Processing ${name} with jar ${jar}"
-              status=$(curl -sS -o /dev/null -w "%{http_code}" \
+              echo "Trying install first..."
+              code=$(curl -sS -o "${body_file}" -w "%{http_code}" -X POST \
+                "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/install" \
                 -H "Authorization: Bearer ${TOKEN}" \
-                "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/${name}" || true)
+                -F "source=FILE" \
+                -F "file=@${jar}")
 
-              if [ "$status" = "200" ]; then
-                echo "Plugin ${name} exists, upgrading..."
+              if [ "$code" = "400" ] && grep -Eq "plugin-alreay-exists|already exists|已经存在" "${body_file}"; then
+                echo "Plugin ${name} already exists, switching to upgrade..."
                 code=$(curl -sS -o "${body_file}" -w "%{http_code}" -X POST \
                   "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/${name}/upgrade" \
-                  -H "Authorization: Bearer ${TOKEN}" \
-                  -F "source=FILE" \
-                  -F "file=@${jar}")
-              else
-                echo "Plugin ${name} not found, installing..."
-                code=$(curl -sS -o "${body_file}" -w "%{http_code}" -X POST \
-                  "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/install" \
                   -H "Authorization: Bearer ${TOKEN}" \
                   -F "source=FILE" \
                   -F "file=@${jar}")
