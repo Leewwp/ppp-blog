@@ -4,6 +4,13 @@ plugins {
     id("run.halo.plugin.devtools") version "0.6.1"
 }
 
+val haloVersion = providers.gradleProperty("haloVersion")
+    .orElse("2.22.0")
+    .get()
+val haloRuntimeVersion = providers.gradleProperty("haloRuntimeVersion")
+    .orElse("2.22")
+    .get()
+
 group = "com.ppp.plugin"
 version = "1.0.0"
 
@@ -14,9 +21,9 @@ repositories {
 }
 
 dependencies {
-    implementation(platform("run.halo.tools.platform:plugin:2.22.0"))
+    implementation(platform("run.halo.tools.platform:plugin:$haloVersion"))
 
-    compileOnly("run.halo.app:plugin-api")
+    compileOnly("run.halo.app:plugin-api:$haloVersion")
 
     implementation("org.springframework.boot:spring-boot-starter-webflux")
     implementation("org.springframework.boot:spring-boot-starter-data-redis-reactive")
@@ -24,7 +31,7 @@ dependencies {
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
 
-    testImplementation("run.halo.app:plugin-api")
+    testImplementation("run.halo.app:plugin-api:$haloVersion")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
@@ -45,5 +52,5 @@ tasks.withType<Test>().configureEach {
 }
 
 halo {
-    version = "2.22"
+    version = haloRuntimeVersion
 }

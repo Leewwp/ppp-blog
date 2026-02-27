@@ -344,3 +344,18 @@ docker-compose restart redis
 ## 许可证
 
 Halo 使用 GPL-v3.0 协议开源。
+
+## Plugin Version Sync (Important)
+
+If you upgrade Halo in this repository, update plugin build versions at the same time.
+
+Files:
+- `plugins/plugin-comment-moderation/gradle.properties`
+- `plugins/plugin-stats-dashboard/gradle.properties`
+- `plugins/plugin-auto-reply/gradle.properties`
+
+Required keys:
+- `haloVersion` (example: `2.22.0`) for `plugin-api` and platform dependencies
+- `haloRuntimeVersion` (example: `2.22`) for `halo { version = ... }`
+
+After changing versions, re-run GitHub Actions workflow `Deploy Halo Plugins`.
