@@ -71,22 +71,39 @@ jobs:
 
             cd /opt/halo-blog/plugins/plugin-comment-moderation
             gradle build --no-daemon
+            ls -lh /opt/halo-blog/plugins/plugin-comment-moderation/build/libs/*.jar
 
             cd /opt/halo-blog/plugins/plugin-stats-dashboard
             gradle build --no-daemon
+            ls -lh /opt/halo-blog/plugins/plugin-stats-dashboard/build/libs/*.jar
 
             cd /opt/halo-blog/plugins/plugin-auto-reply
             gradle build --no-daemon
+            ls -lh /opt/halo-blog/plugins/plugin-auto-reply/build/libs/*.jar
 
-            cp /opt/halo-blog/plugins/plugin-comment-moderation/build/libs/*.jar "$PLUGIN_DIR/" 2>/dev/null || true
-            cp /opt/halo-blog/plugins/plugin-stats-dashboard/build/libs/*.jar "$PLUGIN_DIR/" 2>/dev/null || true
-            cp /opt/halo-blog/plugins/plugin-auto-reply/build/libs/*.jar "$PLUGIN_DIR/" 2>/dev/null || true
+            rm -f "$PLUGIN_DIR"/plugin-comment-moderation-*.jar
+            rm -f "$PLUGIN_DIR"/plugin-stats-dashboard-*.jar
+            rm -f "$PLUGIN_DIR"/plugin-auto-reply-*.jar
+
+            cp /opt/halo-blog/plugins/plugin-comment-moderation/build/libs/*.jar "$PLUGIN_DIR/"
+            cp /opt/halo-blog/plugins/plugin-stats-dashboard/build/libs/*.jar "$PLUGIN_DIR/"
+            cp /opt/halo-blog/plugins/plugin-auto-reply/build/libs/*.jar "$PLUGIN_DIR/"
+
+            echo "Host plugin directory files:"
+            ls -lh "$PLUGIN_DIR"
 
             cd /opt/halo-blog
             docker-compose restart halo
+            sleep 10
+
+            echo "Container plugin directory files:"
+            docker exec halo ls -lh /root/.halo2/plugins/
 
             echo "Plugins deployed and Halo restarted!"
             sleep 30
+
+            echo "Recent Halo logs related to plugin loading:"
+            docker logs --since 3m halo | grep -Ei "plugin|pf4j|failed|error|exception" || true
 
             HALO_URL="${{ secrets.HALO_EXTERNAL_URL }}"
             TOKEN="${{ secrets.HALO_API_TOKEN }}"
