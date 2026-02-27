@@ -355,7 +355,7 @@ Files:
 - `plugins/plugin-auto-reply/gradle.properties`
 
 Required keys:
-- `haloVersion` (example: `2.22.0`) for `plugin-api` and platform dependencies
+- `haloVersion` (example: `2.22.5`) for `run.halo.app:api` and platform dependencies
 - `haloRuntimeVersion` (example: `2.22`) for `halo { version = ... }`
 
 After changing versions, re-run GitHub Actions workflow `Deploy Halo Plugins`.
