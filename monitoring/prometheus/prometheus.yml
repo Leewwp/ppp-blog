@@ -1,0 +1,29 @@
+# Global scrape settings for all targets.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # Halo core application metrics.
+  - job_name: halo
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - halo:8090
+
+  # Comment sensitive-word filtering service.
+  - job_name: comment-filter
+    static_configs:
+      - targets:
+          - comment-filter:8091
+
+  # Automated reply service.
+  - job_name: auto-reply
+    static_configs:
+      - targets:
+          - auto-reply:8092
+
+  # Host/server monitor exporter.
+  - job_name: server-monitor
+    static_configs:
+      - targets:
+          - server-monitor:8093
