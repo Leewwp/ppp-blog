@@ -1,0 +1,20 @@
+apiVersion: v1alpha1
+kind: Setting
+metadata:
+  name: plugin-stats-dashboard-settings
+spec:
+  forms:
+    - group: basic
+      label: Basic
+      formSchema:
+        - $formkit: switch
+          name: redisEnabled
+          label: Redis Enabled
+          value: true
+          help: Enable Redis-based visitor and page-view tracking.
+        - $formkit: number
+          name: visitorTimeout
+          label: Visitor Timeout (Seconds)
+          value: 300
+          validation: required|number|min:30|max:3600
+          help: TTL for each online visitor IP key.
