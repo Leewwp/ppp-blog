@@ -1,25 +1,27 @@
 package com.ppp.plugin.stats.service;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.data.redis.core.ReactiveRedisTemplate;
-import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import run.halo.app.plugin.SettingFetcher;
 
 /**
  * Service for visitor presence tracking and daily page-view counters.
+ * Uses in-memory storage to avoid external runtime dependencies.
  */
 @Slf4j
 @Service
@@ -28,14 +30,14 @@ public class OnlineVisitorService {
 
     private static final String GROUP_BASIC = "basic";
     private static final String ONLINE_VISITOR_KEY_PREFIX = "blog:online:visitors:";
-    private static final String DAILY_PV_KEY_PREFIX = "blog:pv:daily:";
     private static final int DEFAULT_VISITOR_TIMEOUT_SECONDS = 300;
     private static final int DAILY_PV_KEEP_DAYS = 30;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final ZoneId DAILY_PV_ZONE = ZoneId.of("Asia/Shanghai");
 
-    private final ObjectProvider<ReactiveRedisTemplate<String, String>> redisTemplateProvider;
     private final SettingFetcher settingFetcher;
+    private final ConcurrentMap<String, Long> onlineVisitors = new ConcurrentHashMap<>();
+    private final ConcurrentMap<LocalDate, AtomicLong> dailyViews = new ConcurrentHashMap<>();
 
     /**
      * Records one IP as online with a TTL.
@@ -51,16 +53,14 @@ public class OnlineVisitorService {
             return Mono.empty();
         }
 
-        ReactiveRedisTemplate<String, String> redisTemplate = redisTemplateProvider.getIfAvailable();
-        if (redisTemplate == null) {
-            return Mono.empty();
-        }
-
-        String key = ONLINE_VISITOR_KEY_PREFIX + normalizedIp;
         Duration ttl = Duration.ofSeconds(Math.max(30, settings.visitorTimeoutSeconds()));
-        return redisTemplate.opsForValue()
-            .set(key, normalizedIp, ttl)
-            .then()
+        return Mono.fromRunnable(() -> {
+                long now = Instant.now().toEpochMilli();
+                long expireAt = now + ttl.toMillis();
+                onlineVisitors.put(ONLINE_VISITOR_KEY_PREFIX + normalizedIp, expireAt);
+                pruneExpiredVisitors(now);
+            })
+            .subscribeOn(Schedulers.boundedElastic())
             .onErrorResume(error -> {
                 log.warn("failed to record online visitor, ip={}, error={}",
                     normalizedIp, error.toString());
@@ -69,7 +69,7 @@ public class OnlineVisitorService {
     }
 
     /**
-     * Counts online visitor keys using SCAN to avoid blocking Redis.
+     * Counts currently active visitors by pruning expired entries first.
      */
     public Mono<Long> countOnlineVisitors() {
         Settings settings = currentSettings();
@@ -77,18 +77,12 @@ public class OnlineVisitorService {
             return Mono.just(0L);
         }
 
-        ReactiveRedisTemplate<String, String> redisTemplate = redisTemplateProvider.getIfAvailable();
-        if (redisTemplate == null) {
-            return Mono.just(0L);
-        }
-
-        ScanOptions options = ScanOptions.scanOptions()
-            .match(ONLINE_VISITOR_KEY_PREFIX + "*")
-            .count(1000)
-            .build();
-
-        return redisTemplate.scan(options)
-            .count()
+        return Mono.fromCallable(() -> {
+                long now = Instant.now().toEpochMilli();
+                pruneExpiredVisitors(now);
+                return (long) onlineVisitors.size();
+            })
+            .subscribeOn(Schedulers.boundedElastic())
             .onErrorResume(error -> {
                 log.warn("failed to count online visitors, fallback to 0, error={}", error.toString());
                 return Mono.just(0L);
@@ -96,7 +90,7 @@ public class OnlineVisitorService {
     }
 
     /**
-     * Increments page-view counter for current day and refreshes TTL.
+     * Increments page-view counter for current day.
      */
     public Mono<Void> incrementDailyPageView() {
         Settings settings = currentSettings();
@@ -104,31 +98,36 @@ public class OnlineVisitorService {
             return Mono.empty();
         }
 
-        ReactiveRedisTemplate<String, String> redisTemplate = redisTemplateProvider.getIfAvailable();
-        if (redisTemplate == null) {
-            return Mono.empty();
-        }
-
-        String key = dailyPvKey(LocalDate.now(DAILY_PV_ZONE));
-        return redisTemplate.opsForValue()
-            .increment(key)
-            .flatMap(ignored -> redisTemplate.expire(key, Duration.ofDays(DAILY_PV_KEEP_DAYS)))
-            .then()
+        LocalDate today = LocalDate.now(DAILY_PV_ZONE);
+        return Mono.fromRunnable(() -> {
+                dailyViews.computeIfAbsent(today, ignored -> new AtomicLong(0L)).incrementAndGet();
+                pruneOldDailyViews(today);
+            })
+            .subscribeOn(Schedulers.boundedElastic())
             .onErrorResume(error -> {
-                log.warn("failed to increment daily pv, key={}, error={}", key, error.toString());
+                log.warn("failed to increment daily pv, date={}, error={}",
+                    today.format(DATE_FORMATTER), error.toString());
                 return Mono.empty();
             });
     }
 
     /**
-     * Reads today's page views from Redis.
+     * Reads today's page views.
      */
     public Mono<Long> countTodayViews() {
         Settings settings = currentSettings();
         if (!settings.redisEnabled()) {
             return Mono.just(0L);
         }
-        return readDailyViews(LocalDate.now(DAILY_PV_ZONE));
+        LocalDate today = LocalDate.now(DAILY_PV_ZONE);
+        return Mono.fromCallable(() -> Optional.ofNullable(dailyViews.get(today))
+                .map(AtomicLong::get)
+                .orElse(0L))
+            .subscribeOn(Schedulers.boundedElastic())
+            .onErrorResume(error -> {
+                log.warn("failed to read today's pv, fallback to 0, error={}", error.toString());
+                return Mono.just(0L);
+            });
     }
 
     /**
@@ -144,38 +143,25 @@ public class OnlineVisitorService {
             return Mono.just(zeroHistory(days));
         }
 
-        LocalDate today = LocalDate.now(DAILY_PV_ZONE);
-        return Flux.range(0, days)
-            .map(i -> today.minusDays(days - 1L - i))
-            .concatMap(date -> readDailyViews(date)
-                .map(views -> new DailyPv(date.format(DATE_FORMATTER), views)))
-            .collectList()
+        return Mono.fromCallable(() -> {
+                LocalDate today = LocalDate.now(DAILY_PV_ZONE);
+                pruneOldDailyViews(today);
+
+                List<DailyPv> values = new ArrayList<>(days);
+                for (int i = 0; i < days; i++) {
+                    LocalDate date = today.minusDays(days - 1L - i);
+                    long views = Optional.ofNullable(dailyViews.get(date))
+                        .map(AtomicLong::get)
+                        .orElse(0L);
+                    values.add(new DailyPv(date.format(DATE_FORMATTER), views));
+                }
+                return values;
+            })
+            .subscribeOn(Schedulers.boundedElastic())
             .onErrorResume(error -> {
                 log.warn("failed to read pv history, fallback to zeros, error={}", error.toString());
                 return Mono.just(zeroHistory(days));
             });
-    }
-
-    private Mono<Long> readDailyViews(LocalDate date) {
-        ReactiveRedisTemplate<String, String> redisTemplate = redisTemplateProvider.getIfAvailable();
-        if (redisTemplate == null) {
-            return Mono.just(0L);
-        }
-
-        String key = dailyPvKey(date);
-        return redisTemplate.opsForValue()
-            .get(key)
-            .map(this::safeParseLong)
-            .defaultIfEmpty(0L)
-            .onErrorResume(error -> {
-                log.warn("failed to read daily pv, key={}, fallback to 0, error={}",
-                    key, error.toString());
-                return Mono.just(0L);
-            });
-    }
-
-    private String dailyPvKey(LocalDate date) {
-        return DAILY_PV_KEY_PREFIX + date.format(DATE_FORMATTER);
     }
 
     private Settings currentSettings() {
@@ -211,15 +197,13 @@ public class OnlineVisitorService {
         return trimmed;
     }
 
-    private long safeParseLong(String value) {
-        if (value == null || value.isBlank()) {
-            return 0L;
-        }
-        try {
-            return Long.parseLong(value.trim());
-        } catch (NumberFormatException ex) {
-            return 0L;
-        }
+    private void pruneExpiredVisitors(long nowMillis) {
+        onlineVisitors.entrySet().removeIf(entry -> entry.getValue() <= nowMillis);
+    }
+
+    private void pruneOldDailyViews(LocalDate today) {
+        LocalDate oldestToKeep = today.minusDays(Math.max(0, DAILY_PV_KEEP_DAYS - 1L));
+        dailyViews.keySet().removeIf(date -> date.isBefore(oldestToKeep));
     }
 
     @Data
