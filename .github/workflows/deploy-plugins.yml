@@ -46,7 +46,7 @@ jobs:
             plugins/*/build/libs/*.jar
           retention-days: 30
 
-      - name: Prepare upload directory on server
+      - name: Build and install plugins on server
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -55,38 +55,32 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             set -e
-            mkdir -p /tmp/halo-plugins
 
-      - name: Upload plugin JARs to server
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          source: "plugins/plugin-comment-moderation/build/libs/*.jar,plugins/plugin-stats-dashboard/build/libs/*.jar,plugins/plugin-auto-reply/build/libs/*.jar"
-          target: "/tmp/halo-plugins/"
-          strip_components: 4
-          timeout: 120s
-          command_timeout: 20m
-          debug: false
-          overwrite: true
-
-      - name: Install plugins and restart Halo
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            set -e
+            if ! command -v gradle >/dev/null 2>&1; then
+              echo "Gradle is not installed on server. Please install Gradle 8.10.2+ and JDK 21."
+              exit 1
+            fi
 
             PLUGIN_DIR="/opt/halo-blog/halo-data/plugins"
             mkdir -p "$PLUGIN_DIR"
 
-            cp /tmp/halo-plugins/*.jar "$PLUGIN_DIR/" 2>/dev/null || true
-            rm -rf /tmp/halo-plugins
+            cd /opt/halo-blog
+            git fetch origin
+            git checkout main
+            git pull origin main
+
+            cd /opt/halo-blog/plugins/plugin-comment-moderation
+            gradle build --no-daemon
+
+            cd /opt/halo-blog/plugins/plugin-stats-dashboard
+            gradle build --no-daemon
+
+            cd /opt/halo-blog/plugins/plugin-auto-reply
+            gradle build --no-daemon
+
+            cp /opt/halo-blog/plugins/plugin-comment-moderation/build/libs/*.jar "$PLUGIN_DIR/" 2>/dev/null || true
+            cp /opt/halo-blog/plugins/plugin-stats-dashboard/build/libs/*.jar "$PLUGIN_DIR/" 2>/dev/null || true
+            cp /opt/halo-blog/plugins/plugin-auto-reply/build/libs/*.jar "$PLUGIN_DIR/" 2>/dev/null || true
 
             cd /opt/halo-blog
             docker-compose restart halo
