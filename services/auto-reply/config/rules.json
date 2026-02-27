@@ -1,0 +1,69 @@
+[
+  {
+    "id": "rule-thanks",
+    "name": "感谢关键词回复",
+    "keywords": [
+      "谢谢",
+      "感谢",
+      "thank"
+    ],
+    "time_range": {
+      "start": "",
+      "end": ""
+    },
+    "templates": [
+      "感谢您的评论！",
+      "谢谢您的反馈~"
+    ],
+    "priority": 100,
+    "enabled": true
+  },
+  {
+    "id": "rule-question",
+    "name": "提问关键词回复",
+    "keywords": [
+      "问题",
+      "请问",
+      "怎么",
+      "如何"
+    ],
+    "time_range": {
+      "start": "",
+      "end": ""
+    },
+    "templates": [
+      "感谢提问，我会尽快回复！",
+      "好问题，我稍后详细解答。"
+    ],
+    "priority": 90,
+    "enabled": true
+  },
+  {
+    "id": "rule-night-catch-all",
+    "name": "夜间兜底回复",
+    "keywords": [],
+    "time_range": {
+      "start": "22:00",
+      "end": "08:00"
+    },
+    "templates": [
+      "博主已休息，将在明天回复您 :)"
+    ],
+    "priority": 20,
+    "enabled": true
+  },
+  {
+    "id": "rule-day-catch-all",
+    "name": "白天兜底回复",
+    "keywords": [],
+    "time_range": {
+      "start": "08:00",
+      "end": "22:00"
+    },
+    "templates": [
+      "感谢评论，已收到！"
+    ],
+    "priority": 10,
+    "enabled": true
+  }
+]

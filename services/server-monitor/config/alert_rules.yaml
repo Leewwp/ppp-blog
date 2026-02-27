@@ -1,0 +1,21 @@
+rules:
+  - name: high_cpu_usage
+    metric: cpu_usage
+    operator: gt
+    threshold: 85
+    duration_minutes: 2
+    severity: warning
+
+  - name: high_memory_usage
+    metric: memory_usage
+    operator: gt
+    threshold: 90
+    duration_minutes: 0
+    severity: critical
+
+  - name: high_disk_usage
+    metric: disk_usage
+    operator: gt
+    threshold: 80
+    duration_minutes: 0
+    severity: warning

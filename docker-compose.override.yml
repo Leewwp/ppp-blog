@@ -1,0 +1,25 @@
+services:
+  mysql:
+    ports:
+      - "3307:3306"
+
+  comment-filter:
+    build:
+      context: ./services/comment-filter
+      dockerfile: Dockerfile
+    image: ppp-blog/comment-filter:local
+    pull_policy: never
+
+  auto-reply:
+    build:
+      context: ./services/auto-reply
+      dockerfile: Dockerfile
+    image: ppp-blog/auto-reply:local
+    pull_policy: never
+
+  server-monitor:
+    build:
+      context: ./services/server-monitor
+      dockerfile: Dockerfile
+    image: ppp-blog/server-monitor:local
+    pull_policy: never
