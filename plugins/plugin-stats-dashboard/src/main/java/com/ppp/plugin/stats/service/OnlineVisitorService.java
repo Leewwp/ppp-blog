@@ -54,7 +54,7 @@ public class OnlineVisitorService {
         }
 
         Duration ttl = Duration.ofSeconds(Math.max(30, settings.visitorTimeoutSeconds()));
-        return Mono.fromRunnable(() -> {
+        return Mono.<Void>fromRunnable(() -> {
                 long now = Instant.now().toEpochMilli();
                 long expireAt = now + ttl.toMillis();
                 onlineVisitors.put(ONLINE_VISITOR_KEY_PREFIX + normalizedIp, expireAt);
@@ -99,7 +99,7 @@ public class OnlineVisitorService {
         }
 
         LocalDate today = LocalDate.now(DAILY_PV_ZONE);
-        return Mono.fromRunnable(() -> {
+        return Mono.<Void>fromRunnable(() -> {
                 dailyViews.computeIfAbsent(today, ignored -> new AtomicLong(0L)).incrementAndGet();
                 pruneOldDailyViews(today);
             })
