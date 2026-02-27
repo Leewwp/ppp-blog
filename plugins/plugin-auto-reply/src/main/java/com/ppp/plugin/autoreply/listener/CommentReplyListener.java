@@ -4,13 +4,14 @@ import com.ppp.plugin.autoreply.config.AutoReplyProperties;
 import com.ppp.plugin.autoreply.service.ReplyServiceClient;
 import com.ppp.plugin.autoreply.service.dto.AutoReplyRequest;
 import com.ppp.plugin.autoreply.service.dto.AutoReplyResponse;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -19,9 +20,10 @@ import run.halo.app.core.extension.content.Comment;
 import run.halo.app.core.extension.content.Post;
 import run.halo.app.core.extension.content.Reply;
 import run.halo.app.core.user.service.UserService;
-import run.halo.app.event.post.CommentCreatedEvent;
+import run.halo.app.extension.Extension;
 import run.halo.app.extension.Metadata;
 import run.halo.app.extension.ReactiveExtensionClient;
+import run.halo.app.extension.Watcher;
 
 /**
  * Reactive listener for auto-reply when a comment is created.
@@ -29,15 +31,34 @@ import run.halo.app.extension.ReactiveExtensionClient;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class CommentReplyListener {
+public class CommentReplyListener implements Watcher {
 
     private final ReplyServiceClient replyServiceClient;
     private final ReactiveExtensionClient extensionClient;
     private final AutoReplyProperties autoReplyProperties;
+    private volatile boolean disposed = false;
+    private Runnable disposeHook;
 
-    @EventListener
-    public void onCommentCreated(CommentCreatedEvent event) {
-        Comment comment = event.getComment();
+    @PostConstruct
+    public void registerWatcher() {
+        extensionClient.watch(this);
+        log.info("auto-reply watcher registered");
+    }
+
+    @PreDestroy
+    public void onDestroy() {
+        dispose();
+    }
+
+    @Override
+    public void onAdd(Extension extension) {
+        if (isDisposed() || !(extension instanceof Comment comment)) {
+            return;
+        }
+        onCommentCreated(comment);
+    }
+
+    public void onCommentCreated(Comment comment) {
         if (comment == null || comment.getMetadata() == null || comment.getMetadata().getName() == null) {
             log.warn("skip auto-reply: invalid comment event payload");
             return;
@@ -64,6 +85,24 @@ public class CommentReplyListener {
             .onErrorResume(error -> Mono.empty())
             .subscribeOn(Schedulers.boundedElastic())
             .subscribe();
+    }
+
+    @Override
+    public void registerDisposeHook(Runnable dispose) {
+        this.disposeHook = dispose;
+    }
+
+    @Override
+    public void dispose() {
+        disposed = true;
+        if (this.disposeHook != null) {
+            this.disposeHook.run();
+        }
+    }
+
+    @Override
+    public boolean isDisposed() {
+        return this.disposed;
     }
 
     private Mono<Void> maybeCreateReply(String commentName, String replyAuthorName,
