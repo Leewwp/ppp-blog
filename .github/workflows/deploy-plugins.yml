@@ -22,19 +22,21 @@ jobs:
           distribution: "temurin"
 
       - name: Set up Gradle
-        uses: gradle/gradle-build-action@v2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
 
       - name: Build plugin-comment-moderation
         working-directory: plugins/plugin-comment-moderation
-        run: ../../halo/gradlew build
+        run: gradle build
 
       - name: Build plugin-stats-dashboard
         working-directory: plugins/plugin-stats-dashboard
-        run: ../../halo/gradlew build
+        run: gradle build
 
       - name: Build plugin-auto-reply
         working-directory: plugins/plugin-auto-reply
-        run: ../../halo/gradlew build
+        run: gradle build
 
       - name: Upload artifacts (backup)
         uses: actions/upload-artifact@v4
