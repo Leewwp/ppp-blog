@@ -49,7 +49,7 @@ public class OnlineVisitorService {
         }
 
         Settings settings = currentSettings();
-        if (!settings.redisEnabled()) {
+        if (!settings.trackingEnabled()) {
             return Mono.empty();
         }
 
@@ -73,7 +73,7 @@ public class OnlineVisitorService {
      */
     public Mono<Long> countOnlineVisitors() {
         Settings settings = currentSettings();
-        if (!settings.redisEnabled()) {
+        if (!settings.trackingEnabled()) {
             return Mono.just(0L);
         }
 
@@ -94,7 +94,7 @@ public class OnlineVisitorService {
      */
     public Mono<Void> incrementDailyPageView() {
         Settings settings = currentSettings();
-        if (!settings.redisEnabled()) {
+        if (!settings.trackingEnabled()) {
             return Mono.empty();
         }
 
@@ -116,7 +116,7 @@ public class OnlineVisitorService {
      */
     public Mono<Long> countTodayViews() {
         Settings settings = currentSettings();
-        if (!settings.redisEnabled()) {
+        if (!settings.trackingEnabled()) {
             return Mono.just(0L);
         }
         LocalDate today = LocalDate.now(DAILY_PV_ZONE);
@@ -139,7 +139,7 @@ public class OnlineVisitorService {
         }
 
         Settings settings = currentSettings();
-        if (!settings.redisEnabled()) {
+        if (!settings.trackingEnabled()) {
             return Mono.just(zeroHistory(days));
         }
 
@@ -168,11 +168,12 @@ public class OnlineVisitorService {
         BasicGroup basic = settingFetcher.fetch(GROUP_BASIC, BasicGroup.class)
             .orElseGet(BasicGroup::new);
 
-        boolean redisEnabled = Optional.ofNullable(basic.getRedisEnabled()).orElse(Boolean.TRUE);
+        boolean trackingEnabled = Optional.ofNullable(basic.getTrackingEnabled())
+            .orElse(Optional.ofNullable(basic.getRedisEnabled()).orElse(Boolean.TRUE));
         int timeoutSeconds = Optional.ofNullable(basic.getVisitorTimeout())
             .filter(value -> value > 0)
             .orElse(DEFAULT_VISITOR_TIMEOUT_SECONDS);
-        return new Settings(redisEnabled, timeoutSeconds);
+        return new Settings(trackingEnabled, timeoutSeconds);
     }
 
     private List<DailyPv> zeroHistory(int days) {
@@ -208,11 +209,12 @@ public class OnlineVisitorService {
 
     @Data
     public static class BasicGroup {
+        private Boolean trackingEnabled;
         private Boolean redisEnabled = Boolean.TRUE;
         private Integer visitorTimeout = DEFAULT_VISITOR_TIMEOUT_SECONDS;
     }
 
-    public record Settings(boolean redisEnabled, int visitorTimeoutSeconds) {
+    public record Settings(boolean trackingEnabled, int visitorTimeoutSeconds) {
     }
 
     public record DailyPv(String date, long views) {
