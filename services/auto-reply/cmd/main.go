@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ppp-blog/auto-reply/internal/ai"
 	"github.com/ppp-blog/auto-reply/internal/engine"
 	"github.com/ppp-blog/auto-reply/internal/handler"
 	"github.com/ppp-blog/auto-reply/internal/middleware"
@@ -26,6 +28,21 @@ func main() {
 
 	port := getEnv("PORT", "8092")
 	rulesFile := getEnv("RULES_FILE", "config/rules.json")
+
+	aiClient := ai.NewClient(ai.ClientConfig{
+		Enabled:       getEnvBool("AUTO_REPLY_AI_ENABLED", true),
+		APIKey:        getEnv("MINIMAX_API_KEY", ""),
+		APIURL:        getEnv("MINIMAX_API_URL", "https://api.minimaxi.chat/v1/text/chatcompletion_v2"),
+		Model:         getEnv("MINIMAX_MODEL", "MiniMax-Text-01"),
+		Timeout:       time.Duration(getEnvInt("AUTO_REPLY_AI_TIMEOUT_SECONDS", 10)) * time.Second,
+		MaxReplyChars: getEnvInt("AUTO_REPLY_MAX_REPLY_CHARS", 120),
+	}, logger)
+	limiter := ai.NewQuotaLimiter(ai.QuotaLimiterConfig{
+		DailyGlobalLimit: getEnvInt("AUTO_REPLY_DAILY_CALL_LIMIT", 300),
+		DailyPerAuthor:   getEnvInt("AUTO_REPLY_DAILY_AUTHOR_LIMIT", 20),
+		AuthorCooldown:   time.Duration(getEnvInt("AUTO_REPLY_AUTHOR_COOLDOWN_SECONDS", 60)) * time.Second,
+		MaxCommentChars:  getEnvInt("AUTO_REPLY_MAX_COMMENT_CHARS", 180),
+	}, logger)
 
 	ruleStore, err := store.NewRuleStore(rulesFile, logger)
 	if err != nil {
@@ -55,7 +72,14 @@ func main() {
 	router.Use(metrics.Middleware())
 	router.GET("/metrics", metrics.MetricsHandler())
 
-	replyHandler := handler.NewReplyHandler(ruleStore, ruleEngine, logger, metrics.RecordReplyDecision)
+	replyHandler := handler.NewReplyHandler(
+		ruleStore,
+		ruleEngine,
+		aiClient,
+		limiter,
+		logger,
+		metrics.RecordReplyDecision,
+	)
 	ruleHandler := handler.NewRuleHandler(ruleStore, logger)
 	healthHandler := handler.NewHealthHandler(ruleStore)
 
@@ -84,6 +108,7 @@ func main() {
 			"addr", addr,
 			"rules_file", rulesFile,
 			"rule_count", ruleStore.Count(),
+			"ai_enabled", aiClient.Enabled(),
 		)
 
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -131,4 +156,28 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvInt(key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }

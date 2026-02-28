@@ -22,6 +22,8 @@ public class StatsRouter implements CustomEndpoint {
         return RouterFunctions.route()
             .GET("/stats", statsHandler::getStats)
             .GET("/stats/history", statsHandler::getHistory)
+            .GET("/stats/public", statsHandler::getPublicStats)
+            .GET("/stats/history/public", statsHandler::getPublicHistory)
             .build();
     }
 

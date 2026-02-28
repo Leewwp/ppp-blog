@@ -6,23 +6,28 @@ type FilterResult struct {
 	Passed          bool     `json:"passed"`
 	FilteredContent string   `json:"filtered_content"`
 	HitWords        []string `json:"hit_words"`
+	AIReviewed      bool     `json:"ai_reviewed,omitempty"`
+	AIAllowed       bool     `json:"ai_allowed,omitempty"`
+	AIReason        string   `json:"ai_reason,omitempty"`
 }
 
 type FilterService struct {
-	store  *WordStore
-	logger *slog.Logger
-	onHit  func()
+	store    *WordStore
+	reviewer *AIReviewer
+	logger   *slog.Logger
+	onHit    func()
 }
 
-func NewFilterService(store *WordStore, logger *slog.Logger, onHit func()) *FilterService {
+func NewFilterService(store *WordStore, reviewer *AIReviewer, logger *slog.Logger, onHit func()) *FilterService {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	return &FilterService{
-		store:  store,
-		logger: logger,
-		onHit:  onHit,
+		store:    store,
+		reviewer: reviewer,
+		logger:   logger,
+		onHit:    onHit,
 	}
 }
 
@@ -51,6 +56,32 @@ func (s *FilterService) Filter(content, author string) FilterResult {
 		s.onHit()
 	}
 	s.logger.Warn("sensitive words detected", "author", author, "hits", hitWords, "hit_count", len(hitWords))
+
+	if s.reviewer != nil && s.reviewer.Enabled() {
+		decision, err := s.reviewer.Review(content, author, hitWords)
+		if err != nil {
+			s.logger.Warn("ai review failed, keep reject for safety", "author", author, "error", err)
+		} else if decision.Allow {
+			s.logger.Info("ai review allowed comment", "author", author, "hits", hitWords, "reason", decision.Reason)
+			return FilterResult{
+				Passed:          true,
+				FilteredContent: content,
+				HitWords:        hitWords,
+				AIReviewed:      true,
+				AIAllowed:       true,
+				AIReason:        decision.Reason,
+			}
+		} else {
+			return FilterResult{
+				Passed:          false,
+				FilteredContent: filtered,
+				HitWords:        hitWords,
+				AIReviewed:      true,
+				AIAllowed:       false,
+				AIReason:        decision.Reason,
+			}
+		}
+	}
 
 	return FilterResult{
 		Passed:          false,
