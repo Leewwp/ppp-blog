@@ -18,7 +18,7 @@ Set these in server `.env` (or your secure secret injection path):
 
 ```env
 MINIMAX_API_KEY=your_real_key
-MINIMAX_API_URL=https://api.minimaxi.chat/v1/text/chatcompletion_v2
+MINIMAX_API_URL=https://api.minimaxi.com/v1/text/chatcompletion_v2
 MINIMAX_MODEL=MiniMax-Text-01
 ```
 

@@ -30,7 +30,7 @@ func main() {
 	reviewer := service.NewAIReviewer(service.ReviewerConfig{
 		Enabled:        getEnvBool("COMMENT_REVIEW_AI_ENABLED", true),
 		APIKey:         getEnv("MINIMAX_API_KEY", ""),
-		APIURL:         getEnv("MINIMAX_API_URL", "https://api.minimaxi.chat/v1/text/chatcompletion_v2"),
+		APIURL:         getEnv("MINIMAX_API_URL", "https://api.minimaxi.com/v1/text/chatcompletion_v2"),
 		Model:          getEnv("MINIMAX_MODEL", "MiniMax-Text-01"),
 		Timeout:        time.Duration(getEnvInt("COMMENT_REVIEW_AI_TIMEOUT_SECONDS", 8)) * time.Second,
 		MaxContentChar: getEnvInt("COMMENT_REVIEW_AI_MAX_CONTENT_CHARS", 500),
