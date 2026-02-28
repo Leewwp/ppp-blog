@@ -45,7 +45,14 @@ func NewAIReviewer(cfg ReviewerConfig, logger *slog.Logger) *AIReviewer {
 	if cfg.MaxContentChar <= 0 {
 		cfg.MaxContentChar = 500
 	}
-	if strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.APIURL) == "" {
+	cfg.APIKey = sanitizeAPIKey(cfg.APIKey)
+	cfg.APIURL = strings.TrimSpace(cfg.APIURL)
+	cfg.Model = strings.TrimSpace(cfg.Model)
+	if cfg.Model == "" {
+		cfg.Model = "MiniMax-Text-01"
+	}
+
+	if cfg.APIKey == "" || cfg.APIURL == "" {
 		cfg.Enabled = false
 	}
 	return &AIReviewer{
@@ -215,4 +222,15 @@ func safeCut(text string, max int) string {
 		return string(runes[:max])
 	}
 	return text
+}
+
+func sanitizeAPIKey(key string) string {
+	key = strings.TrimSpace(key)
+	if len(key) >= 2 {
+		if (strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"")) ||
+			(strings.HasPrefix(key, "'") && strings.HasSuffix(key, "'")) {
+			key = key[1 : len(key)-1]
+		}
+	}
+	return strings.TrimSpace(key)
 }

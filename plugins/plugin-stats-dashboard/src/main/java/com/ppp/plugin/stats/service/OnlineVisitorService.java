@@ -48,19 +48,21 @@ public class OnlineVisitorService {
             return Mono.empty();
         }
 
-        Settings settings = currentSettings();
-        if (!settings.trackingEnabled()) {
-            return Mono.empty();
-        }
+        return settingsMono()
+            .flatMap(settings -> {
+                if (!settings.trackingEnabled()) {
+                    return Mono.empty();
+                }
 
-        Duration ttl = Duration.ofSeconds(Math.max(30, settings.visitorTimeoutSeconds()));
-        return Mono.<Void>fromRunnable(() -> {
-                long now = Instant.now().toEpochMilli();
-                long expireAt = now + ttl.toMillis();
-                onlineVisitors.put(ONLINE_VISITOR_KEY_PREFIX + normalizedIp, expireAt);
-                pruneExpiredVisitors(now);
+                Duration ttl = Duration.ofSeconds(Math.max(30, settings.visitorTimeoutSeconds()));
+                return Mono.<Void>fromRunnable(() -> {
+                        long now = Instant.now().toEpochMilli();
+                        long expireAt = now + ttl.toMillis();
+                        onlineVisitors.put(ONLINE_VISITOR_KEY_PREFIX + normalizedIp, expireAt);
+                        pruneExpiredVisitors(now);
+                    })
+                    .subscribeOn(Schedulers.boundedElastic());
             })
-            .subscribeOn(Schedulers.boundedElastic())
             .onErrorResume(error -> {
                 log.warn("failed to record online visitor, ip={}, error={}",
                     normalizedIp, error.toString());
@@ -72,17 +74,19 @@ public class OnlineVisitorService {
      * Counts currently active visitors by pruning expired entries first.
      */
     public Mono<Long> countOnlineVisitors() {
-        Settings settings = currentSettings();
-        if (!settings.trackingEnabled()) {
-            return Mono.just(0L);
-        }
+        return settingsMono()
+            .flatMap(settings -> {
+                if (!settings.trackingEnabled()) {
+                    return Mono.just(0L);
+                }
 
-        return Mono.fromCallable(() -> {
-                long now = Instant.now().toEpochMilli();
-                pruneExpiredVisitors(now);
-                return (long) onlineVisitors.size();
+                return Mono.fromCallable(() -> {
+                        long now = Instant.now().toEpochMilli();
+                        pruneExpiredVisitors(now);
+                        return (long) onlineVisitors.size();
+                    })
+                    .subscribeOn(Schedulers.boundedElastic());
             })
-            .subscribeOn(Schedulers.boundedElastic())
             .onErrorResume(error -> {
                 log.warn("failed to count online visitors, fallback to 0, error={}", error.toString());
                 return Mono.just(0L);
@@ -93,20 +97,22 @@ public class OnlineVisitorService {
      * Increments page-view counter for current day.
      */
     public Mono<Void> incrementDailyPageView() {
-        Settings settings = currentSettings();
-        if (!settings.trackingEnabled()) {
-            return Mono.empty();
-        }
+        return settingsMono()
+            .flatMap(settings -> {
+                if (!settings.trackingEnabled()) {
+                    return Mono.empty();
+                }
 
-        LocalDate today = LocalDate.now(DAILY_PV_ZONE);
-        return Mono.<Void>fromRunnable(() -> {
-                dailyViews.computeIfAbsent(today, ignored -> new AtomicLong(0L)).incrementAndGet();
-                pruneOldDailyViews(today);
+                LocalDate today = LocalDate.now(DAILY_PV_ZONE);
+                return Mono.<Void>fromRunnable(() -> {
+                        dailyViews.computeIfAbsent(today, ignored -> new AtomicLong(0L))
+                            .incrementAndGet();
+                        pruneOldDailyViews(today);
+                    })
+                    .subscribeOn(Schedulers.boundedElastic());
             })
-            .subscribeOn(Schedulers.boundedElastic())
             .onErrorResume(error -> {
-                log.warn("failed to increment daily pv, date={}, error={}",
-                    today.format(DATE_FORMATTER), error.toString());
+                log.warn("failed to increment daily pv, error={}", error.toString());
                 return Mono.empty();
             });
     }
@@ -115,15 +121,17 @@ public class OnlineVisitorService {
      * Reads today's page views.
      */
     public Mono<Long> countTodayViews() {
-        Settings settings = currentSettings();
-        if (!settings.trackingEnabled()) {
-            return Mono.just(0L);
-        }
-        LocalDate today = LocalDate.now(DAILY_PV_ZONE);
-        return Mono.fromCallable(() -> Optional.ofNullable(dailyViews.get(today))
-                .map(AtomicLong::get)
-                .orElse(0L))
-            .subscribeOn(Schedulers.boundedElastic())
+        return settingsMono()
+            .flatMap(settings -> {
+                if (!settings.trackingEnabled()) {
+                    return Mono.just(0L);
+                }
+                LocalDate today = LocalDate.now(DAILY_PV_ZONE);
+                return Mono.fromCallable(() -> Optional.ofNullable(dailyViews.get(today))
+                        .map(AtomicLong::get)
+                        .orElse(0L))
+                    .subscribeOn(Schedulers.boundedElastic());
+            })
             .onErrorResume(error -> {
                 log.warn("failed to read today's pv, fallback to 0, error={}", error.toString());
                 return Mono.just(0L);
@@ -138,30 +146,37 @@ public class OnlineVisitorService {
             return Mono.just(List.of());
         }
 
-        Settings settings = currentSettings();
-        if (!settings.trackingEnabled()) {
-            return Mono.just(zeroHistory(days));
-        }
-
-        return Mono.fromCallable(() -> {
-                LocalDate today = LocalDate.now(DAILY_PV_ZONE);
-                pruneOldDailyViews(today);
-
-                List<DailyPv> values = new ArrayList<>(days);
-                for (int i = 0; i < days; i++) {
-                    LocalDate date = today.minusDays(days - 1L - i);
-                    long views = Optional.ofNullable(dailyViews.get(date))
-                        .map(AtomicLong::get)
-                        .orElse(0L);
-                    values.add(new DailyPv(date.format(DATE_FORMATTER), views));
+        return settingsMono()
+            .flatMap(settings -> {
+                if (!settings.trackingEnabled()) {
+                    return Mono.just(zeroHistory(days));
                 }
-                return values;
+
+                return Mono.fromCallable(() -> {
+                        LocalDate today = LocalDate.now(DAILY_PV_ZONE);
+                        pruneOldDailyViews(today);
+
+                        List<DailyPv> values = new ArrayList<>(days);
+                        for (int i = 0; i < days; i++) {
+                            LocalDate date = today.minusDays(days - 1L - i);
+                            long views = Optional.ofNullable(dailyViews.get(date))
+                                .map(AtomicLong::get)
+                                .orElse(0L);
+                            values.add(new DailyPv(date.format(DATE_FORMATTER), views));
+                        }
+                        return values;
+                    })
+                    .subscribeOn(Schedulers.boundedElastic());
             })
-            .subscribeOn(Schedulers.boundedElastic())
             .onErrorResume(error -> {
                 log.warn("failed to read pv history, fallback to zeros, error={}", error.toString());
                 return Mono.just(zeroHistory(days));
             });
+    }
+
+    private Mono<Settings> settingsMono() {
+        return Mono.fromCallable(this::currentSettings)
+            .subscribeOn(Schedulers.boundedElastic());
     }
 
     private Settings currentSettings() {
