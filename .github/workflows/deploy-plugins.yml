@@ -69,7 +69,8 @@ jobs:
             git update-ref -d refs/remotes/origin/main || true
             git fetch --prune origin
             git checkout main
-            git pull --ff-only origin main
+            git reset --hard origin/main
+            clean_generated_plugin_files
 
             build_plugin() {
               local plugin_dir="$1"
