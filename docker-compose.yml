@@ -95,7 +95,7 @@ services:
       - COMMENT_REVIEW_AI_ENABLED=${COMMENT_REVIEW_AI_ENABLED:-true}
       - COMMENT_REVIEW_AI_TIMEOUT_SECONDS=${COMMENT_REVIEW_AI_TIMEOUT_SECONDS:-8}
       - COMMENT_REVIEW_AI_MAX_CONTENT_CHARS=${COMMENT_REVIEW_AI_MAX_CONTENT_CHARS:-500}
-      - MINIMAX_API_URL=${MINIMAX_API_URL:-https://api.minimaxi.chat/v1/text/chatcompletion_v2}
+      - MINIMAX_API_URL=${MINIMAX_API_URL:-https://api.minimaxi.com/v1/text/chatcompletion_v2}
       - MINIMAX_MODEL=${MINIMAX_MODEL:-MiniMax-Text-01}
       - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
       - TZ=Asia/Shanghai
@@ -118,7 +118,7 @@ services:
       - AUTO_REPLY_DAILY_CALL_LIMIT=${AUTO_REPLY_DAILY_CALL_LIMIT:-300}
       - AUTO_REPLY_DAILY_AUTHOR_LIMIT=${AUTO_REPLY_DAILY_AUTHOR_LIMIT:-20}
       - AUTO_REPLY_AUTHOR_COOLDOWN_SECONDS=${AUTO_REPLY_AUTHOR_COOLDOWN_SECONDS:-60}
-      - MINIMAX_API_URL=${MINIMAX_API_URL:-https://api.minimaxi.chat/v1/text/chatcompletion_v2}
+      - MINIMAX_API_URL=${MINIMAX_API_URL:-https://api.minimaxi.com/v1/text/chatcompletion_v2}
       - MINIMAX_MODEL=${MINIMAX_MODEL:-MiniMax-Text-01}
       - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
       - TZ=Asia/Shanghai

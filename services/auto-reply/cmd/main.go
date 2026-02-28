@@ -32,7 +32,7 @@ func main() {
 	aiClient := ai.NewClient(ai.ClientConfig{
 		Enabled:       getEnvBool("AUTO_REPLY_AI_ENABLED", true),
 		APIKey:        getEnv("MINIMAX_API_KEY", ""),
-		APIURL:        getEnv("MINIMAX_API_URL", "https://api.minimaxi.chat/v1/text/chatcompletion_v2"),
+		APIURL:        getEnv("MINIMAX_API_URL", "https://api.minimaxi.com/v1/text/chatcompletion_v2"),
 		Model:         getEnv("MINIMAX_MODEL", "MiniMax-Text-01"),
 		Timeout:       time.Duration(getEnvInt("AUTO_REPLY_AI_TIMEOUT_SECONDS", 10)) * time.Second,
 		MaxReplyChars: getEnvInt("AUTO_REPLY_MAX_REPLY_CHARS", 120),
