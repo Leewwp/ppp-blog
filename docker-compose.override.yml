@@ -1,8 +1,4 @@
 services:
-  mysql:
-    ports:
-      - "3307:3306"
-
   comment-filter:
     build:
       context: ./services/comment-filter
