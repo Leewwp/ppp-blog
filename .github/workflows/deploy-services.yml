@@ -48,12 +48,14 @@ jobs:
             if docker ps --format '{{.Names}}' | grep -qx "halo"; then
               echo "Halo is already running."
             else
-              echo "Halo is not running, trying to start mysql/redis/halo..."
-              if ! docker-compose up -d mysql redis halo; then
-                MYSQL_PORT="${MYSQL_HOST_PORT:-3307}"
-                echo "Warning: failed to start core services. Common cause: host port ${MYSQL_PORT} is already in use."
-                ss -lntp 2>/dev/null | grep ":${MYSQL_PORT}" || true
-                docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'halo|mysql|redis' || true
+              echo "Halo is not running, starting mysql/redis/halo..."
+              docker-compose up -d mysql redis halo
+              sleep 10
+              if ! docker ps --format '{{.Names}}' | grep -qx "halo"; then
+                echo "ERROR: halo container failed to start."
+                docker-compose ps mysql redis halo || true
+                docker-compose logs --tail 200 halo || true
+                exit 1
               fi
             fi
 
