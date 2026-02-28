@@ -42,7 +42,7 @@ jobs:
             git update-ref -d refs/remotes/origin/main || true
             git fetch --prune origin
             git checkout main
-            git pull --ff-only origin main
+            git reset --hard origin/main
 
             echo "Checking core services..."
             if docker ps --format '{{.Names}}' | grep -qx "halo"; then

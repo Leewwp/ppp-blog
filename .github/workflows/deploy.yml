@@ -40,7 +40,7 @@ jobs:
             git update-ref -d refs/remotes/origin/main || true
             git fetch --prune origin
             git checkout main
-            git pull --ff-only origin main
+            git reset --hard origin/main
             
             # Pull latest images if available and recreate changed containers without full shutdown
             docker-compose pull || true
