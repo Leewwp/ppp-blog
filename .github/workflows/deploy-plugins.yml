@@ -8,43 +8,19 @@ on:
       - plugins/**
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-plugins-main
+  cancel-in-progress: false
+
 jobs:
   deploy-plugins:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: "21"
-          distribution: "temurin"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.10.2
-
-      - name: Build plugin-comment-moderation
-        working-directory: plugins/plugin-comment-moderation
-        run: gradle build
-
-      - name: Build plugin-stats-dashboard
-        working-directory: plugins/plugin-stats-dashboard
-        run: gradle build
-
-      - name: Build plugin-auto-reply
-        working-directory: plugins/plugin-auto-reply
-        run: gradle build
-
-      - name: Upload artifacts (backup)
-        uses: actions/upload-artifact@v4
-        with:
-          name: halo-plugins
-          path: |
-            plugins/*/build/libs/*.jar
-          retention-days: 30
 
       - name: Build and install plugins on server
         uses: appleboy/ssh-action@v1.0.0
@@ -54,29 +30,40 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            set -e
+            set -euo pipefail
 
-            if ! command -v gradle >/dev/null 2>&1; then
-              echo "Gradle is not installed on server. Please install Gradle 8.10.2+ and JDK 21."
+            if ! command -v java >/dev/null 2>&1; then
+              echo "Java is not installed on server. Please install JDK 21."
               exit 1
             fi
+            if ! command -v gradle >/dev/null 2>&1; then
+              echo "Gradle is not installed on server. Please install Gradle 8.10.2+."
+              exit 1
+            fi
+
+            java -version || true
+            gradle --version || true
 
             cd /opt/halo-blog
             git fetch origin
             git checkout main
             git pull origin main
 
-            cd /opt/halo-blog/plugins/plugin-comment-moderation
-            gradle build --no-daemon
-            ls -lh /opt/halo-blog/plugins/plugin-comment-moderation/build/libs/*.jar
+            build_plugin() {
+              local plugin_dir="$1"
+              cd "/opt/halo-blog/plugins/${plugin_dir}"
+              gradle clean build --no-daemon
+              ls -lh "/opt/halo-blog/plugins/${plugin_dir}/build/libs/"*.jar
+            }
 
-            cd /opt/halo-blog/plugins/plugin-stats-dashboard
-            gradle build --no-daemon
-            ls -lh /opt/halo-blog/plugins/plugin-stats-dashboard/build/libs/*.jar
+            latest_jar() {
+              local plugin_dir="$1"
+              ls -1t "/opt/halo-blog/plugins/${plugin_dir}/build/libs/"*.jar | head -n 1
+            }
 
-            cd /opt/halo-blog/plugins/plugin-auto-reply
-            gradle build --no-daemon
-            ls -lh /opt/halo-blog/plugins/plugin-auto-reply/build/libs/*.jar
+            build_plugin "plugin-comment-moderation"
+            build_plugin "plugin-stats-dashboard"
+            build_plugin "plugin-auto-reply"
 
             HALO_URL="${{ secrets.HALO_EXTERNAL_URL }}"
             TOKEN="${{ secrets.HALO_API_TOKEN }}"
@@ -102,7 +89,7 @@ jobs:
                 -F "source=FILE" \
                 -F "file=@${jar}")
 
-              if [ "$code" = "400" ] && grep -Eq "plugin-alreay-exists|already exists|已经存在" "${body_file}"; then
+              if [ "$code" = "400" ] && grep -Eq "plugin-already-exists|plugin-alreay-exists|already[[:space:]]exists|已经存在" "${body_file}"; then
                 echo "Plugin ${name} already exists, switching to upgrade..."
                 code=$(curl -sS -o "${body_file}" -w "%{http_code}" -X POST \
                   "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/${name}/upgrade" \
@@ -132,13 +119,13 @@ jobs:
 
             install_or_upgrade_plugin \
               "plugin-comment-moderation" \
-              "$(ls -1 /opt/halo-blog/plugins/plugin-comment-moderation/build/libs/*.jar | head -n 1)"
+              "$(latest_jar "plugin-comment-moderation")"
             install_or_upgrade_plugin \
               "plugin-stats-dashboard" \
-              "$(ls -1 /opt/halo-blog/plugins/plugin-stats-dashboard/build/libs/*.jar | head -n 1)"
+              "$(latest_jar "plugin-stats-dashboard")"
             install_or_upgrade_plugin \
               "plugin-auto-reply" \
-              "$(ls -1 /opt/halo-blog/plugins/plugin-auto-reply/build/libs/*.jar | head -n 1)"
+              "$(latest_jar "plugin-auto-reply")"
 
             echo "Query plugin list after deployment:"
             curl -sS -X GET "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins" \

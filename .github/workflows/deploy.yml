@@ -34,11 +34,12 @@ jobs:
             git checkout main
             git pull origin main
             
-            # Restart Docker services
-            docker-compose down
-            docker-compose up -d
+            # Pull latest images if available and recreate changed containers without full shutdown
+            docker-compose pull || true
+            docker-compose up -d --remove-orphans
             
             # Wait for services
             sleep 10
+            docker-compose ps
             
             echo "Deployment completed!"

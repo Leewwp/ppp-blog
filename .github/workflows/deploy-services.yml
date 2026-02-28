@@ -40,5 +40,6 @@ jobs:
             git checkout main
             git pull origin main
 
-            docker-compose up -d --no-deps comment-filter auto-reply server-monitor
+            docker-compose up -d --no-deps --build --force-recreate comment-filter auto-reply server-monitor
+            docker-compose ps comment-filter auto-reply server-monitor
             echo "Services restarted!"

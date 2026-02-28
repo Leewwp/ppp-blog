@@ -8,7 +8,7 @@ spec:
       label: Basic
       formSchema:
         - $formkit: switch
-          name: redisEnabled
+          name: trackingEnabled
           label: Tracking Enabled
           value: true
           help: Enable visitor and page-view tracking.

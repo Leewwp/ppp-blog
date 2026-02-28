@@ -23,6 +23,11 @@ public class VisitorTrackingFilter implements WebFilter {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+        String path = exchange.getRequest().getPath().value();
+        if (shouldSkipPath(path)) {
+            return chain.filter(exchange);
+        }
+
         String ip = extractClientIp(exchange.getRequest());
         Mono<Void> tracking = onlineVisitorService.recordVisit(ip)
             .then(onlineVisitorService.incrementDailyPageView())
@@ -32,6 +37,24 @@ public class VisitorTrackingFilter implements WebFilter {
             });
 
         return tracking.then(chain.filter(exchange));
+    }
+
+    private boolean shouldSkipPath(String path) {
+        if (path == null || path.isBlank()) {
+            return true;
+        }
+
+        String normalized = path.toLowerCase();
+        if (normalized.startsWith("/actuator")
+            || normalized.startsWith("/apis/")
+            || normalized.startsWith("/console")
+            || normalized.startsWith("/upload/")
+            || normalized.startsWith("/themes/")
+            || normalized.startsWith("/plugins/")) {
+            return true;
+        }
+
+        return normalized.matches(".*\\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|map)$");
     }
 
     private String extractClientIp(ServerHttpRequest request) {

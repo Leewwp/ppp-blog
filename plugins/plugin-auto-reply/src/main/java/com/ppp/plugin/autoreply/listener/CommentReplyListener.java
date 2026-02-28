@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -21,6 +22,7 @@ import run.halo.app.core.extension.content.Post;
 import run.halo.app.core.extension.content.Reply;
 import run.halo.app.core.user.service.UserService;
 import run.halo.app.extension.Extension;
+import run.halo.app.extension.ListOptions;
 import run.halo.app.extension.Metadata;
 import run.halo.app.extension.ReactiveExtensionClient;
 import run.halo.app.extension.Watcher;
@@ -122,12 +124,41 @@ public class CommentReplyListener implements Watcher {
 
         long delaySeconds = normalizeDelaySeconds(response.delaySeconds());
 
-        return Mono.delay(Duration.ofSeconds(delaySeconds))
-            .flatMap(ignore -> createReply(commentName, replyContent, replyAuthorName))
-            .doOnSuccess(ignore -> log.info(
-                "auto-reply created, comment={}, delaySeconds={}, matchedRule={}",
-                commentName, delaySeconds, response.matchedRule()))
-            .then();
+        return hasAutoReplyForComment(commentName)
+            .flatMap(exists -> {
+                if (exists) {
+                    log.info("auto-reply skipped for duplicate comment={}", commentName);
+                    return Mono.<Void>empty();
+                }
+
+                return Mono.delay(Duration.ofSeconds(delaySeconds))
+                    .flatMap(ignore -> hasAutoReplyForComment(commentName))
+                    .flatMap(existsAfterDelay -> {
+                        if (existsAfterDelay) {
+                            log.info("auto-reply skipped after delay for duplicate comment={}",
+                                commentName);
+                            return Mono.<Void>empty();
+                        }
+                        return createReply(commentName, replyContent, replyAuthorName).then();
+                    })
+                    .doOnSuccess(ignore -> log.info(
+                        "auto-reply created, comment={}, delaySeconds={}, matchedRule={}",
+                        commentName, delaySeconds, response.matchedRule()));
+            });
+    }
+
+    private Mono<Boolean> hasAutoReplyForComment(String commentName) {
+        return extensionClient.listAll(Reply.class, ListOptions.builder().build(), Sort.unsorted())
+            .filter(reply -> reply != null && reply.getSpec() != null)
+            .filter(reply -> commentName.equals(reply.getSpec().getCommentName()))
+            .filter(reply -> reply.getSpec().getOwner() != null)
+            .filter(reply -> UserService.GHOST_USER_NAME.equals(reply.getSpec().getOwner().getName()))
+            .hasElements()
+            .onErrorResume(error -> {
+                log.warn("failed to check existing auto-reply, comment={}, error={}",
+                    commentName, error.toString());
+                return Mono.just(false);
+            });
     }
 
     private Mono<Reply> createReply(String commentName, String replyContent, String replyAuthorName) {
