@@ -233,12 +233,13 @@ docker-compose up -d halo
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| SPRING_DATASOURCE_URL | - | MySQL 数据库连接地址 |
-| SPRING_DATASOURCE_USERNAME | halo | 数据库用户名 |
-| SPRING_DATASOURCE_PASSWORD | halo_password | 数据库密码 |
-| SPRING_REDIS_HOST | redis | Redis 主机地址 |
-| SPRING_REDIS_PORT | 6379 | Redis 端口 |
-| SPRING_REDIS_PASSWORD | redis_password | Redis 密码 |
+| SPRING_R2DBC_URL | - | MySQL 数据库连接地址（Halo 2.x 使用 R2DBC） |
+| SPRING_R2DBC_USERNAME | halo | 数据库用户名 |
+| SPRING_R2DBC_PASSWORD | halo_password | 数据库密码 |
+| SPRING_SQL_INIT_PLATFORM | mysql | SQL 初始化平台 |
+| SPRING_DATA_REDIS_HOST | redis | Redis 主机地址 |
+| SPRING_DATA_REDIS_PORT | 6379 | Redis 端口 |
+| SPRING_DATA_REDIS_PASSWORD | redis_password | Redis 密码 |
 | SERVER_PORT | 8090 | Halo 服务端口 |
 | HALO_EXTERNAL_URL | http://localhost:8090 | Halo 外部访问地址 |
 | TZ | Asia/Shanghai | 时区设置 |

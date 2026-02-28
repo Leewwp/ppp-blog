@@ -77,17 +77,33 @@ public class DashboardSinglePageInitializer {
             }).join("");
           }
 
+          async function fetchJsonWithFallback(primary, fallback) {
+            const primaryRes = await fetch(primary, { credentials: "include" });
+            if (primaryRes.ok) {
+              return primaryRes.json();
+            }
+            if (!fallback) {
+              throw new Error(`request failed: ${primary} -> ${primaryRes.status}`);
+            }
+            const fallbackRes = await fetch(fallback, { credentials: "include" });
+            if (!fallbackRes.ok) {
+              throw new Error(`request failed: ${primary}/${fallback} -> ${primaryRes.status}/${fallbackRes.status}`);
+            }
+            return fallbackRes.json();
+          }
+
           async function loadStats() {
             try {
-              const [statsRes, historyRes] = await Promise.all([
-                fetch("/apis/ppp.run/v1alpha1/stats/public", { credentials: "include" }),
-                fetch("/apis/ppp.run/v1alpha1/stats/history/public", { credentials: "include" })
+              const [stats, history] = await Promise.all([
+                fetchJsonWithFallback(
+                  "/apis/ppp.run/v1alpha1/stats/public",
+                  "/apis/ppp.run/v1alpha1/stats"
+                ),
+                fetchJsonWithFallback(
+                  "/apis/ppp.run/v1alpha1/stats/history/public",
+                  "/apis/ppp.run/v1alpha1/stats/history"
+                )
               ]);
-              if (!statsRes.ok || !historyRes.ok) {
-                throw new Error(`stats api failed: ${statsRes.status}/${historyRes.status}`);
-              }
-              const stats = await statsRes.json();
-              const history = await historyRes.json();
               renderCards(stats);
               renderHistory(history.history || []);
             } catch (err) {

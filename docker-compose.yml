@@ -15,13 +15,14 @@ services:
     volumes:
       - ./halo-data:/root/.halo2
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/halo?characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-      - SPRING_DATASOURCE_USERNAME=halo
-      - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD}
-      - SPRING_REDIS_HOST=redis
-      - SPRING_REDIS_PORT=6379
-      - SPRING_REDIS_PASSWORD=${REDIS_PASSWORD}
-      - SPRING_REDIS_DATABASE=0
+      - SPRING_R2DBC_URL=r2dbc:pool:mysql://mysql:3306/halo
+      - SPRING_R2DBC_USERNAME=halo
+      - SPRING_R2DBC_PASSWORD=${MYSQL_PASSWORD}
+      - SPRING_SQL_INIT_PLATFORM=mysql
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_DATA_REDIS_PASSWORD=${REDIS_PASSWORD}
+      - SPRING_DATA_REDIS_DATABASE=0
       - SERVER_PORT=8090
       - HALO_EXTERNAL_URL=${HALO_EXTERNAL_URL:-http://localhost:8090}
       - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,globalinfo,prometheus
