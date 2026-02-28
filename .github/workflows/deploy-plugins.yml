@@ -45,6 +45,14 @@ jobs:
             gradle --version || true
 
             cd /opt/halo-blog
+            clean_generated_gradle_files() {
+              git restore --worktree --staged \
+                plugins/plugin-comment-moderation/.gradle \
+                plugins/plugin-stats-dashboard/.gradle \
+                plugins/plugin-auto-reply/.gradle 2>/dev/null || true
+            }
+
+            clean_generated_gradle_files
             rm -f .git/index.lock .git/refs/remotes/origin/main.lock || true
             git remote prune origin || true
             git update-ref -d refs/remotes/origin/main || true
@@ -55,7 +63,9 @@ jobs:
             build_plugin() {
               local plugin_dir="$1"
               cd "/opt/halo-blog/plugins/${plugin_dir}"
-              gradle clean build --no-daemon
+              GRADLE_USER_HOME="/tmp/gradle-user-home" \
+                gradle clean build --no-daemon \
+                --project-cache-dir "/tmp/gradle-project-cache/${plugin_dir}"
               ls -lh "/opt/halo-blog/plugins/${plugin_dir}/build/libs/"*.jar
             }
 
@@ -137,3 +147,6 @@ jobs:
             echo "Recent Halo logs related to plugin loading:"
             docker logs --since 5m halo 2>&1 | grep -Ei \
               "plugin|pf4j|plugin-auto-reply|plugin-comment-moderation|plugin-stats-dashboard|failed|error|exception" || true
+
+            cd /opt/halo-blog
+            clean_generated_gradle_files

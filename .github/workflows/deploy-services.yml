@@ -44,9 +44,18 @@ jobs:
             git checkout main
             git pull --ff-only origin main
 
-            echo "Ensuring core services are running..."
-            docker-compose up -d mysql redis
-            docker-compose up -d halo
+            echo "Checking core services..."
+            if docker ps --format '{{.Names}}' | grep -qx "halo"; then
+              echo "Halo is already running."
+            else
+              echo "Halo is not running, trying to start mysql/redis/halo..."
+              if ! docker-compose up -d mysql redis halo; then
+                MYSQL_PORT="${MYSQL_HOST_PORT:-3307}"
+                echo "Warning: failed to start core services. Common cause: host port ${MYSQL_PORT} is already in use."
+                ss -lntp 2>/dev/null | grep ":${MYSQL_PORT}" || true
+                docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'halo|mysql|redis' || true
+              fi
+            fi
 
             docker-compose up -d --no-deps --build --force-recreate comment-filter auto-reply server-monitor
             docker-compose ps halo halo-mysql halo-redis comment-filter auto-reply server-monitor
