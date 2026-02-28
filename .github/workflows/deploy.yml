@@ -12,6 +12,10 @@ on:
       - ".github/workflows/deploy-plugins.yml"
   workflow_dispatch:
 
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -27,12 +31,16 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
+            set -e
             cd /opt/halo-blog
             
             # Pull latest code
-            git fetch origin
+            rm -f .git/index.lock .git/refs/remotes/origin/main.lock || true
+            git remote prune origin || true
+            git update-ref -d refs/remotes/origin/main || true
+            git fetch --prune origin
             git checkout main
-            git pull origin main
+            git pull --ff-only origin main
             
             # Pull latest images if available and recreate changed containers without full shutdown
             docker-compose pull || true
