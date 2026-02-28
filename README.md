@@ -359,3 +359,11 @@ Required keys:
 - `haloRuntimeVersion` (example: `2.22`) for `halo { version = ... }`
 
 After changing versions, re-run GitHub Actions workflow `Deploy Halo Plugins`.
+
+## AI Moderation & Auto-Reply
+
+See [AI_MODERATION_REPLY_GUIDE.md](AI_MODERATION_REPLY_GUIDE.md) for:
+- MiniMax API key/env setup
+- comment-filter AI re-check flow
+- auto-reply AI generation and quota limits
+- rule management APIs

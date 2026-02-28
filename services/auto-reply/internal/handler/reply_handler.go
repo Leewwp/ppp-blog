@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ppp-blog/auto-reply/internal/ai"
 	"github.com/ppp-blog/auto-reply/internal/engine"
 	"github.com/ppp-blog/auto-reply/internal/store"
 )
@@ -13,6 +15,8 @@ import (
 type ReplyHandler struct {
 	ruleStore  *store.RuleStore
 	ruleEngine *engine.RuleEngine
+	aiClient   *ai.Client
+	limiter    *ai.QuotaLimiter
 	logger     *slog.Logger
 	onDecision func(shouldReply bool, ruleID, ruleName string)
 }
@@ -34,6 +38,8 @@ type replyResponse struct {
 func NewReplyHandler(
 	ruleStore *store.RuleStore,
 	ruleEngine *engine.RuleEngine,
+	aiClient *ai.Client,
+	limiter *ai.QuotaLimiter,
 	logger *slog.Logger,
 	onDecision func(shouldReply bool, ruleID, ruleName string),
 ) *ReplyHandler {
@@ -43,6 +49,8 @@ func NewReplyHandler(
 	return &ReplyHandler{
 		ruleStore:  ruleStore,
 		ruleEngine: ruleEngine,
+		aiClient:   aiClient,
+		limiter:    limiter,
 		logger:     logger,
 		onDecision: onDecision,
 	}
@@ -80,14 +88,49 @@ func (h *ReplyHandler) Reply(c *gin.Context) {
 		matchedRuleID = matchedRule.ID
 		matchedRuleName = matchedRule.Name
 	}
+
+	finalDecision := decision
+	if finalDecision.ShouldReply {
+		if h.limiter != nil {
+			allowed, reason := h.limiter.Allow(req.Author, req.Content)
+			if !allowed {
+				h.logger.Info("skip auto-reply by limiter", "reason", reason, "author", req.Author)
+				finalDecision = engine.ReplyDecision{}
+			}
+		}
+	}
+
+	if finalDecision.ShouldReply {
+		if h.aiClient == nil || !h.aiClient.Enabled() {
+			h.logger.Warn("skip auto-reply: ai client is disabled")
+			finalDecision = engine.ReplyDecision{}
+		} else {
+			generated, genErr := h.aiClient.GenerateReply(c.Request.Context(), ai.GenerateRequest{
+				Author:         req.Author,
+				PostTitle:      req.PostTitle,
+				CommentContent: req.Content,
+				RuleHint:       finalDecision.ReplyContent,
+			})
+			if genErr != nil {
+				if errors.Is(genErr, ai.ErrQuotaExceeded) && h.limiter != nil {
+					h.limiter.MarkQuotaExhausted()
+				}
+				h.logger.Warn("skip auto-reply: ai generation failed", "error", genErr)
+				finalDecision = engine.ReplyDecision{}
+			} else {
+				finalDecision.ReplyContent = generated
+			}
+		}
+	}
+
 	if h.onDecision != nil {
-		h.onDecision(decision.ShouldReply, matchedRuleID, matchedRuleName)
+		h.onDecision(finalDecision.ShouldReply, matchedRuleID, matchedRuleName)
 	}
 
 	c.JSON(http.StatusOK, replyResponse{
-		ShouldReply:  decision.ShouldReply,
-		ReplyContent: decision.ReplyContent,
-		DelaySeconds: decision.DelaySeconds,
-		MatchedRule:  decision.MatchedRule,
+		ShouldReply:  finalDecision.ShouldReply,
+		ReplyContent: finalDecision.ReplyContent,
+		DelaySeconds: finalDecision.DelaySeconds,
+		MatchedRule:  finalDecision.MatchedRule,
 	})
 }

@@ -1,0 +1,19 @@
+---
+apiVersion: "plugin.halo.run/v1alpha1"
+kind: "Plugin"
+metadata:
+  name: "plugin-auto-reply"
+spec:
+  enabled: true
+  requires: ">=2.20.0"
+  author:
+    name: "PPP"
+    website: "https://github.com/ppp-blog"
+  displayName: "自动回复插件"
+  description: "监听新评论，调用 auto-reply 微服务自动生成回复"
+  version: "1.0.0"
+  settingName: "plugin-auto-reply-settings"
+  configMapName: "plugin-auto-reply-configmap"
+  license:
+  - name: "GPL-3.0"
+    url: "https://www.gnu.org/licenses/gpl-3.0.html"

@@ -35,6 +35,10 @@ import run.halo.app.extension.Watcher;
 @RequiredArgsConstructor
 public class CommentReplyListener implements Watcher {
 
+    private static final String MODERATION_STATUS_ANNO = "comment-moderation.halo.run/status";
+    private static final int MODERATION_MAX_CHECK_ATTEMPTS = 20;
+    private static final Duration MODERATION_CHECK_INTERVAL = Duration.ofMillis(500);
+
     private final ReplyServiceClient replyServiceClient;
     private final ReactiveExtensionClient extensionClient;
     private final AutoReplyProperties autoReplyProperties;
@@ -76,12 +80,20 @@ public class CommentReplyListener implements Watcher {
         String content = safeContent(comment);
         String author = safeAuthor(comment);
 
-        resolvePostTitle(comment)
-            .flatMap(postTitle -> {
-                AutoReplyRequest request = new AutoReplyRequest(commentName, content, postTitle, author);
-                return replyServiceClient.generateReply(settings.replyServiceUrl(), request);
+        waitForCommentReviewReady(commentName)
+            .flatMap(ready -> {
+                if (!ready) {
+                    log.info("skip auto-reply due to moderation status, comment={}", commentName);
+                    return Mono.<Void>empty();
+                }
+
+                return resolvePostTitle(comment)
+                    .flatMap(postTitle -> {
+                        AutoReplyRequest request = new AutoReplyRequest(commentName, content, postTitle, author);
+                        return replyServiceClient.generateReply(settings.replyServiceUrl(), request);
+                    })
+                    .flatMap(response -> maybeCreateReply(commentName, settings.replyAuthorName(), response));
             })
-            .flatMap(response -> maybeCreateReply(commentName, settings.replyAuthorName(), response))
             .doOnError(error -> log.error("auto-reply processing failed, comment={}, error={}",
                 commentName, error.toString(), error))
             .onErrorResume(error -> Mono.empty())
@@ -159,6 +171,72 @@ public class CommentReplyListener implements Watcher {
                     commentName, error.toString());
                 return Mono.just(false);
             });
+    }
+
+    private Mono<Boolean> waitForCommentReviewReady(String commentName) {
+        return waitForCommentReviewReady(commentName, 0);
+    }
+
+    private Mono<Boolean> waitForCommentReviewReady(String commentName, int attempt) {
+        return extensionClient.fetch(Comment.class, commentName)
+            .map(this::resolveModerationState)
+            .defaultIfEmpty(ModerationState.reject())
+            .flatMap(state -> {
+                if (state.terminal()) {
+                    return Mono.just(state.allowReply());
+                }
+                if (attempt + 1 >= MODERATION_MAX_CHECK_ATTEMPTS) {
+                    return Mono.just(false);
+                }
+                return Mono.delay(MODERATION_CHECK_INTERVAL)
+                    .flatMap(ignore -> waitForCommentReviewReady(commentName, attempt + 1));
+            })
+            .onErrorResume(error -> {
+                log.warn("failed to check moderation status, skip auto-reply, comment={}, error={}",
+                    commentName, error.toString());
+                return Mono.just(false);
+            });
+    }
+
+    private ModerationState resolveModerationState(Comment comment) {
+        if (comment == null || comment.getSpec() == null) {
+            return ModerationState.reject();
+        }
+
+        boolean approved = Boolean.TRUE.equals(comment.getSpec().getApproved());
+        boolean hidden = Boolean.TRUE.equals(comment.getSpec().getHidden());
+        if (!approved || hidden) {
+            return ModerationState.reject();
+        }
+
+        String status = "";
+        if (comment.getMetadata() != null && comment.getMetadata().getAnnotations() != null) {
+            status = comment.getMetadata().getAnnotations().getOrDefault(MODERATION_STATUS_ANNO, "");
+        }
+        status = status == null ? "" : status.trim().toUpperCase();
+
+        if (status.isBlank()) {
+            return ModerationState.pending();
+        }
+        return switch (status) {
+            case "PASS" -> ModerationState.allow();
+            case "MARK", "REJECT", "LOG_ONLY" -> ModerationState.reject();
+            default -> ModerationState.pending();
+        };
+    }
+
+    private record ModerationState(boolean terminal, boolean allowReply) {
+        static ModerationState allow() {
+            return new ModerationState(true, true);
+        }
+
+        static ModerationState reject() {
+            return new ModerationState(true, false);
+        }
+
+        static ModerationState pending() {
+            return new ModerationState(false, false);
+        }
     }
 
     private Mono<Reply> createReply(String commentName, String replyContent, String replyAuthorName) {

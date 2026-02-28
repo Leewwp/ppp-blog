@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -26,6 +27,15 @@ func main() {
 	port := getEnv("PORT", "8091")
 	wordsFile := getEnv("WORDS_FILE", "data/sensitive_words.txt")
 
+	reviewer := service.NewAIReviewer(service.ReviewerConfig{
+		Enabled:        getEnvBool("COMMENT_REVIEW_AI_ENABLED", true),
+		APIKey:         getEnv("MINIMAX_API_KEY", ""),
+		APIURL:         getEnv("MINIMAX_API_URL", "https://api.minimaxi.chat/v1/text/chatcompletion_v2"),
+		Model:          getEnv("MINIMAX_MODEL", "MiniMax-Text-01"),
+		Timeout:        time.Duration(getEnvInt("COMMENT_REVIEW_AI_TIMEOUT_SECONDS", 8)) * time.Second,
+		MaxContentChar: getEnvInt("COMMENT_REVIEW_AI_MAX_CONTENT_CHARS", 500),
+	}, logger)
+
 	store, err := service.NewWordStore(wordsFile, logger)
 	if err != nil {
 		logger.Error("failed to initialize word store", "error", err)
@@ -42,7 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	filterService := service.NewFilterService(store, logger, metrics.IncFilterHit)
+	filterService := service.NewFilterService(store, reviewer, logger, metrics.IncFilterHit)
 
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -84,7 +94,12 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("comment-filter service started", "addr", addr, "words_file", wordsFile, "word_count", store.Count())
+		logger.Info("comment-filter service started",
+			"addr", addr,
+			"words_file", wordsFile,
+			"word_count", store.Count(),
+			"ai_review_enabled", reviewer.Enabled(),
+		)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("server failed", "error", err)
 			os.Exit(1)
@@ -110,4 +125,28 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvInt(key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }

@@ -29,6 +29,8 @@ public class CommentEventListener implements Watcher {
 
     private static final String ANNO_STATUS = "comment-moderation.halo.run/status";
     private static final String ANNO_HIT_WORDS = "comment-moderation.halo.run/hit-words";
+    private static final String STATUS_PASS = "PASS";
+    private static final String STATUS_LOG_ONLY = "LOG_ONLY";
 
     private final FilterServiceClient filterServiceClient;
     private final ReactiveExtensionClient extensionClient;
@@ -115,14 +117,42 @@ public class CommentEventListener implements Watcher {
         );
 
         if (result.passed()) {
-            return Mono.empty();
+            return markCommentStatus(commentName, eventComment, STATUS_PASS, result);
         }
 
         return switch (strategy) {
-            case LOG_ONLY -> Mono.empty();
+            case LOG_ONLY -> markCommentStatus(commentName, eventComment, STATUS_LOG_ONLY, result);
             case MARK -> updateComment(commentName, eventComment, false, false, "MARK", result);
             case REJECT -> updateComment(commentName, eventComment, false, true, "REJECT", result);
         };
+    }
+
+    private Mono<Void> markCommentStatus(String commentName, Comment fallbackComment,
+        String moderationStatus, CommentFilterResponse result) {
+        return extensionClient
+            .fetch(Comment.class, commentName)
+            .defaultIfEmpty(fallbackComment)
+            .flatMap(comment -> {
+                if (comment.getMetadata() != null) {
+                    Map<String, String> annotations = comment.getMetadata().getAnnotations();
+                    if (annotations == null) {
+                        annotations = new HashMap<>();
+                        comment.getMetadata().setAnnotations(annotations);
+                    }
+                    annotations.put(ANNO_STATUS, moderationStatus);
+                    annotations.put(ANNO_HIT_WORDS, String.join(",",
+                        Optional.ofNullable(result.hitWords()).orElseGet(java.util.List::of)));
+                }
+                return extensionClient.update(comment);
+            })
+            .doOnSuccess(updated -> log.debug("comment moderation annotated comment={}, status={}",
+                commentName, moderationStatus))
+            .onErrorResume(error -> {
+                log.warn("failed to annotate moderated comment={}, status={}, error={}",
+                    commentName, moderationStatus, error.toString());
+                return Mono.empty();
+            })
+            .then();
     }
 
     private Mono<Void> updateComment(

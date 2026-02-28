@@ -91,6 +91,12 @@ services:
     environment:
       - PORT=8091
       - WORDS_FILE=/app/data/sensitive_words.txt
+      - COMMENT_REVIEW_AI_ENABLED=${COMMENT_REVIEW_AI_ENABLED:-true}
+      - COMMENT_REVIEW_AI_TIMEOUT_SECONDS=${COMMENT_REVIEW_AI_TIMEOUT_SECONDS:-8}
+      - COMMENT_REVIEW_AI_MAX_CONTENT_CHARS=${COMMENT_REVIEW_AI_MAX_CONTENT_CHARS:-500}
+      - MINIMAX_API_URL=${MINIMAX_API_URL:-https://api.minimaxi.chat/v1/text/chatcompletion_v2}
+      - MINIMAX_MODEL=${MINIMAX_MODEL:-MiniMax-Text-01}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
       - TZ=Asia/Shanghai
 
   auto-reply:
@@ -104,6 +110,16 @@ services:
     environment:
       - PORT=8092
       - RULES_FILE=/app/config/rules.json
+      - AUTO_REPLY_AI_ENABLED=${AUTO_REPLY_AI_ENABLED:-true}
+      - AUTO_REPLY_AI_TIMEOUT_SECONDS=${AUTO_REPLY_AI_TIMEOUT_SECONDS:-10}
+      - AUTO_REPLY_MAX_COMMENT_CHARS=${AUTO_REPLY_MAX_COMMENT_CHARS:-180}
+      - AUTO_REPLY_MAX_REPLY_CHARS=${AUTO_REPLY_MAX_REPLY_CHARS:-120}
+      - AUTO_REPLY_DAILY_CALL_LIMIT=${AUTO_REPLY_DAILY_CALL_LIMIT:-300}
+      - AUTO_REPLY_DAILY_AUTHOR_LIMIT=${AUTO_REPLY_DAILY_AUTHOR_LIMIT:-20}
+      - AUTO_REPLY_AUTHOR_COOLDOWN_SECONDS=${AUTO_REPLY_AUTHOR_COOLDOWN_SECONDS:-60}
+      - MINIMAX_API_URL=${MINIMAX_API_URL:-https://api.minimaxi.chat/v1/text/chatcompletion_v2}
+      - MINIMAX_MODEL=${MINIMAX_MODEL:-MiniMax-Text-01}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
       - TZ=Asia/Shanghai
 
   server-monitor:
