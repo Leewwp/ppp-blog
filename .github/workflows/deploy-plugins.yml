@@ -45,14 +45,25 @@ jobs:
             gradle --version || true
 
             cd /opt/halo-blog
-            clean_generated_gradle_files() {
+            clean_generated_plugin_files() {
               git restore --worktree --staged \
+                plugins/plugin-comment-moderation/build \
                 plugins/plugin-comment-moderation/.gradle \
+                plugins/plugin-stats-dashboard/build \
                 plugins/plugin-stats-dashboard/.gradle \
+                plugins/plugin-auto-reply/build \
+                plugins/plugin-auto-reply/.gradle 2>/dev/null || true
+
+              git clean -fd \
+                plugins/plugin-comment-moderation/build \
+                plugins/plugin-comment-moderation/.gradle \
+                plugins/plugin-stats-dashboard/build \
+                plugins/plugin-stats-dashboard/.gradle \
+                plugins/plugin-auto-reply/build \
                 plugins/plugin-auto-reply/.gradle 2>/dev/null || true
             }
 
-            clean_generated_gradle_files
+            clean_generated_plugin_files
             rm -f .git/index.lock .git/refs/remotes/origin/main.lock || true
             git remote prune origin || true
             git update-ref -d refs/remotes/origin/main || true
@@ -149,4 +160,4 @@ jobs:
               "plugin|pf4j|plugin-auto-reply|plugin-comment-moderation|plugin-stats-dashboard|failed|error|exception" || true
 
             cd /opt/halo-blog
-            clean_generated_gradle_files
+            clean_generated_plugin_files
