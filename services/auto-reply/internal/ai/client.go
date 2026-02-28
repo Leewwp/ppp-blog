@@ -40,6 +40,8 @@ type Client struct {
 	logger     *slog.Logger
 }
 
+const anthropicVersion = "2023-06-01"
+
 func NewClient(cfg ClientConfig, logger *slog.Logger) *Client {
 	if logger == nil {
 		logger = slog.Default()
@@ -78,6 +80,8 @@ func (c *Client) GenerateReply(ctx context.Context, req GenerateRequest) (string
 		return "", ErrDisabled
 	}
 
+	mode := c.protocolMode()
+
 	userPrompt := fmt.Sprintf(
 		"文章标题：%s\n评论作者：%s\n评论内容：%s\n参考风格：%s\n\n请生成一段简短中文回复。",
 		safeTrim(req.PostTitle, 80),
@@ -86,22 +90,7 @@ func (c *Client) GenerateReply(ctx context.Context, req GenerateRequest) (string
 		safeTrim(req.RuleHint, 120),
 	)
 
-	payload := map[string]any{
-		"model": c.cfg.Model,
-		"messages": []map[string]string{
-			{
-				"role":    "system",
-				"content": "你是博客作者助手。请输出自然中文，1-2句话，简洁直接，不要提及系统或额度，不要输出 markdown。",
-			},
-			{
-				"role":    "user",
-				"content": userPrompt,
-			},
-		},
-		"temperature":        0.2,
-		"max_tokens":         160,
-		"tokens_to_generate": 160,
-	}
+	payload := c.buildPayload(mode, userPrompt)
 
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -114,6 +103,9 @@ func (c *Client) GenerateReply(ctx context.Context, req GenerateRequest) (string
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
+	if mode == "anthropic" {
+		httpReq.Header.Set("anthropic-version", anthropicVersion)
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -130,8 +122,7 @@ func (c *Client) GenerateReply(ctx context.Context, req GenerateRequest) (string
 		return "", ErrQuotaExceeded
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		lowerBody := strings.ToLower(string(respBytes))
-		if strings.Contains(lowerBody, "invalid api key") || strings.Contains(lowerBody, "invalid_api_key") {
+		if isAuthError(string(respBytes)) {
 			return "", fmt.Errorf("ai api auth failed: invalid api key (url=%s, model=%s)", c.cfg.APIURL, c.cfg.Model)
 		}
 		return "", fmt.Errorf("ai api status %d: %s", resp.StatusCode, safeTrim(string(respBytes), 300))
@@ -148,12 +139,57 @@ func (c *Client) GenerateReply(ctx context.Context, req GenerateRequest) (string
 	return content, nil
 }
 
+func (c *Client) protocolMode() string {
+	urlLower := strings.ToLower(c.cfg.APIURL)
+	if strings.HasPrefix(c.cfg.APIKey, "sk-cp-") || strings.Contains(urlLower, "/anthropic/") {
+		return "anthropic"
+	}
+	return "chatcompletion"
+}
+
+func (c *Client) buildPayload(mode, userPrompt string) map[string]any {
+	systemPrompt := "你是博客作者助手。请输出自然中文，1-2句话，简洁直接，不要提及系统或额度，不要输出 markdown。"
+	if mode == "anthropic" {
+		return map[string]any{
+			"model":       c.cfg.Model,
+			"system":      systemPrompt,
+			"max_tokens":  160,
+			"temperature": 0.2,
+			"messages": []map[string]string{
+				{
+					"role":    "user",
+					"content": userPrompt,
+				},
+			},
+		}
+	}
+	return map[string]any{
+		"model": c.cfg.Model,
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": systemPrompt,
+			},
+			{
+				"role":    "user",
+				"content": userPrompt,
+			},
+		},
+		"temperature":        0.2,
+		"max_tokens":         160,
+		"tokens_to_generate": 160,
+	}
+}
+
 func extractContent(raw []byte) (string, error) {
 	var resp map[string]any
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return "", fmt.Errorf("unmarshal ai response: %w", err)
 	}
 
+	if text := tryAnthropicText(resp); text != "" {
+		return text, nil
+	}
 	if text := tryPathString(resp, "choices", 0, "message", "content"); text != "" {
 		return text, nil
 	}
@@ -165,6 +201,9 @@ func extractContent(raw []byte) (string, error) {
 	}
 	if text := tryPathString(resp, "data", "reply"); text != "" {
 		return text, nil
+	}
+	if text := tryPathString(resp, "error", "message"); text != "" {
+		return "", fmt.Errorf("ai response error: %s", text)
 	}
 	if text := tryPathString(resp, "base_resp", "status_msg"); text != "" {
 		return "", fmt.Errorf("ai response has no content, status_msg=%s", text)
@@ -233,8 +272,47 @@ func isQuotaError(text string) bool {
 	lower := strings.ToLower(text)
 	return strings.Contains(lower, "quota") ||
 		strings.Contains(lower, "rate limit") ||
+		strings.Contains(lower, "rate_limit") ||
 		strings.Contains(lower, "too many requests") ||
 		strings.Contains(lower, "insufficient")
+}
+
+func isAuthError(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "invalid api key") ||
+		strings.Contains(lower, "invalid_api_key") ||
+		strings.Contains(lower, "authentication_error") ||
+		strings.Contains(lower, "unauthorized")
+}
+
+func tryAnthropicText(resp map[string]any) string {
+	content, ok := resp["content"]
+	if !ok {
+		return ""
+	}
+	parts := make([]string, 0)
+	switch arr := content.(type) {
+	case []any:
+		for _, item := range arr {
+			switch typed := item.(type) {
+			case map[string]any:
+				if text, ok := typed["text"].(string); ok && strings.TrimSpace(text) != "" {
+					parts = append(parts, strings.TrimSpace(text))
+				}
+			case string:
+				if strings.TrimSpace(typed) != "" {
+					parts = append(parts, strings.TrimSpace(typed))
+				}
+			}
+		}
+	case []map[string]any:
+		for _, item := range arr {
+			if text, ok := item["text"].(string); ok && strings.TrimSpace(text) != "" {
+				parts = append(parts, strings.TrimSpace(text))
+			}
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
 func sanitizeAPIKey(key string) string {

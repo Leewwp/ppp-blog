@@ -18,8 +18,8 @@ Set these in server `.env` (or your secure secret injection path):
 
 ```env
 MINIMAX_API_KEY=your_real_key
-MINIMAX_API_URL=https://api.minimaxi.com/v1/text/chatcompletion_v2
-MINIMAX_MODEL=MiniMax-Text-01
+MINIMAX_API_URL=https://api.minimaxi.com/anthropic/v1/messages
+MINIMAX_MODEL=MiniMax-M2.5
 ```
 
 Optional controls:
@@ -27,17 +27,24 @@ Optional controls:
 ```env
 # comment-filter AI re-check
 COMMENT_REVIEW_AI_ENABLED=true
-COMMENT_REVIEW_AI_TIMEOUT_SECONDS=8
+COMMENT_REVIEW_AI_TIMEOUT_SECONDS=30
 COMMENT_REVIEW_AI_MAX_CONTENT_CHARS=500
 
 # auto-reply AI + quota controls
 AUTO_REPLY_AI_ENABLED=true
-AUTO_REPLY_AI_TIMEOUT_SECONDS=10
+AUTO_REPLY_AI_TIMEOUT_SECONDS=30
 AUTO_REPLY_MAX_COMMENT_CHARS=180
 AUTO_REPLY_MAX_REPLY_CHARS=120
 AUTO_REPLY_DAILY_CALL_LIMIT=300
 AUTO_REPLY_DAILY_AUTHOR_LIMIT=20
 AUTO_REPLY_AUTHOR_COOLDOWN_SECONDS=60
+```
+
+If you are using pay-as-you-go MiniMax keys (non `sk-cp-`), you can still use:
+
+```env
+MINIMAX_API_URL=https://api.minimaxi.com/v1/text/chatcompletion_v2
+MINIMAX_MODEL=MiniMax-Text-01
 ```
 
 After changing `.env`:

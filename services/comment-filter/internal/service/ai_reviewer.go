@@ -35,6 +35,8 @@ type AIReviewer struct {
 	logger     *slog.Logger
 }
 
+const anthropicVersion = "2023-06-01"
+
 func NewAIReviewer(cfg ReviewerConfig, logger *slog.Logger) *AIReviewer {
 	if logger == nil {
 		logger = slog.Default()
@@ -87,22 +89,8 @@ func (r *AIReviewer) Review(content, author string, hitWords []string) (ReviewDe
 		safeCut(content, r.cfg.MaxContentChar),
 	)
 
-	payload := map[string]any{
-		"model": r.cfg.Model,
-		"messages": []map[string]string{
-			{
-				"role":    "system",
-				"content": "你是评论审核助手。标准：宁可严谨，不放过明显违规。若仅是无害日常表达且命中词为歧义，可判定 allow=true。",
-			},
-			{
-				"role":    "user",
-				"content": prompt,
-			},
-		},
-		"temperature":        0.0,
-		"max_tokens":         120,
-		"tokens_to_generate": 120,
-	}
+	mode := r.protocolMode()
+	payload := r.buildPayload(mode, prompt)
 
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -114,6 +102,9 @@ func (r *AIReviewer) Review(content, author string, hitWords []string) (ReviewDe
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+r.cfg.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
+	if mode == "anthropic" {
+		httpReq.Header.Set("anthropic-version", anthropicVersion)
+	}
 
 	resp, err := r.httpClient.Do(httpReq)
 	if err != nil {
@@ -147,6 +138,9 @@ func extractResponseText(raw []byte) (string, error) {
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return "", fmt.Errorf("unmarshal review response: %w", err)
 	}
+	if text := tryAnthropicText(resp); text != "" {
+		return text, nil
+	}
 	if text := tryPathString(resp, "choices", 0, "message", "content"); text != "" {
 		return text, nil
 	}
@@ -155,6 +149,9 @@ func extractResponseText(raw []byte) (string, error) {
 	}
 	if text := tryPathString(resp, "output_text"); text != "" {
 		return text, nil
+	}
+	if text := tryPathString(resp, "error", "message"); text != "" {
+		return "", fmt.Errorf("review response error: %s", text)
 	}
 	return "", errors.New("review response has no content")
 }
@@ -233,4 +230,76 @@ func sanitizeAPIKey(key string) string {
 		}
 	}
 	return strings.TrimSpace(key)
+}
+
+func (r *AIReviewer) protocolMode() string {
+	urlLower := strings.ToLower(r.cfg.APIURL)
+	if strings.HasPrefix(r.cfg.APIKey, "sk-cp-") || strings.Contains(urlLower, "/anthropic/") {
+		return "anthropic"
+	}
+	return "chatcompletion"
+}
+
+func (r *AIReviewer) buildPayload(mode, userPrompt string) map[string]any {
+	systemPrompt := "你是评论审核助手。标准：宁可严谨，不放过明显违规。若仅是无害日常表达且命中词为歧义，可判定 allow=true。"
+	if mode == "anthropic" {
+		return map[string]any{
+			"model":       r.cfg.Model,
+			"system":      systemPrompt,
+			"max_tokens":  120,
+			"temperature": 0.0,
+			"messages": []map[string]string{
+				{
+					"role":    "user",
+					"content": userPrompt,
+				},
+			},
+		}
+	}
+	return map[string]any{
+		"model": r.cfg.Model,
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": systemPrompt,
+			},
+			{
+				"role":    "user",
+				"content": userPrompt,
+			},
+		},
+		"temperature":        0.0,
+		"max_tokens":         120,
+		"tokens_to_generate": 120,
+	}
+}
+
+func tryAnthropicText(resp map[string]any) string {
+	content, ok := resp["content"]
+	if !ok {
+		return ""
+	}
+	parts := make([]string, 0)
+	switch arr := content.(type) {
+	case []any:
+		for _, item := range arr {
+			switch typed := item.(type) {
+			case map[string]any:
+				if text, ok := typed["text"].(string); ok && strings.TrimSpace(text) != "" {
+					parts = append(parts, strings.TrimSpace(text))
+				}
+			case string:
+				if strings.TrimSpace(typed) != "" {
+					parts = append(parts, strings.TrimSpace(typed))
+				}
+			}
+		}
+	case []map[string]any:
+		for _, item := range arr {
+			if text, ok := item["text"].(string); ok && strings.TrimSpace(text) != "" {
+				parts = append(parts, strings.TrimSpace(text))
+			}
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
