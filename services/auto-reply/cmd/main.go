@@ -32,9 +32,9 @@ func main() {
 	aiClient := ai.NewClient(ai.ClientConfig{
 		Enabled:       getEnvBool("AUTO_REPLY_AI_ENABLED", true),
 		APIKey:        getEnv("MINIMAX_API_KEY", ""),
-		APIURL:        getEnv("MINIMAX_API_URL", "https://api.minimaxi.com/v1/text/chatcompletion_v2"),
-		Model:         getEnv("MINIMAX_MODEL", "MiniMax-Text-01"),
-		Timeout:       time.Duration(getEnvInt("AUTO_REPLY_AI_TIMEOUT_SECONDS", 10)) * time.Second,
+		APIURL:        getEnv("MINIMAX_API_URL", "https://api.minimaxi.com/anthropic/v1/messages"),
+		Model:         getEnv("MINIMAX_MODEL", "MiniMax-M2.5"),
+		Timeout:       time.Duration(getEnvInt("AUTO_REPLY_AI_TIMEOUT_SECONDS", 30)) * time.Second,
 		MaxReplyChars: getEnvInt("AUTO_REPLY_MAX_REPLY_CHARS", 120),
 	}, logger)
 	limiter := ai.NewQuotaLimiter(ai.QuotaLimiterConfig{
