@@ -29,6 +29,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          command_timeout: 45m
           script: |
             set -euo pipefail
 
@@ -41,8 +42,8 @@ jobs:
               exit 1
             fi
 
-            java -version || true
-            gradle --version || true
+            java -version 2>&1 || true
+            gradle --version 2>&1 || true
 
             cd /opt/halo-blog
             clean_generated_plugin_files() {
@@ -74,6 +75,7 @@ jobs:
 
             build_plugin() {
               local plugin_dir="$1"
+              echo "Building ${plugin_dir}..."
               cd "/opt/halo-blog/plugins/${plugin_dir}"
               GRADLE_USER_HOME="/tmp/gradle-user-home" \
                 gradle clean build --no-daemon \
@@ -129,17 +131,29 @@ jobs:
                 exit 1
               fi
 
-              code=$(curl -sS -o "${body_file}" -w "%{http_code}" -X PUT \
-                "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/${name}/plugin-state" \
-                -H "Authorization: Bearer ${TOKEN}" \
-                -H "Content-Type: application/json" \
-                -d '{"enable": true, "async": false}')
+              local retries=6
+              while true; do
+                code=$(curl -sS -o "${body_file}" -w "%{http_code}" -X PUT \
+                  "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins/${name}/plugin-state" \
+                  -H "Authorization: Bearer ${TOKEN}" \
+                  -H "Content-Type: application/json" \
+                  -d '{"enable": true, "async": true}')
 
-              if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+                if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+                  break
+                fi
+
+                if [ "$code" = "409" ] && [ "$retries" -gt 0 ]; then
+                  echo "Enable conflict for ${name}, retrying..."
+                  retries=$((retries - 1))
+                  sleep 3
+                  continue
+                fi
+
                 echo "Enable failed for ${name}, http=${code}"
                 cat "${body_file}" || true
                 exit 1
-              fi
+              done
             }
 
             install_or_upgrade_plugin \
