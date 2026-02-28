@@ -44,6 +44,10 @@ jobs:
             git checkout main
             git pull --ff-only origin main
 
+            echo "Ensuring core services are running..."
+            docker-compose up -d mysql redis
+            docker-compose up -d halo
+
             docker-compose up -d --no-deps --build --force-recreate comment-filter auto-reply server-monitor
-            docker-compose ps comment-filter auto-reply server-monitor
+            docker-compose ps halo halo-mysql halo-redis comment-filter auto-reply server-monitor
             echo "Services restarted!"
