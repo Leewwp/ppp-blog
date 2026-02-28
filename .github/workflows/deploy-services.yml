@@ -44,19 +44,36 @@ jobs:
             git checkout main
             git reset --hard origin/main
 
+            wait_halo_ready() {
+              local retries=24
+              while [ "$retries" -gt 0 ]; do
+                if docker ps --format '{{.Names}}' | grep -qx "halo"; then
+                  health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' halo 2>/dev/null || echo missing)"
+                  if [ "$health" = "healthy" ] || [ "$health" = "unknown" ]; then
+                    return 0
+                  fi
+                  echo "Halo health status: ${health}, waiting..."
+                else
+                  echo "Halo container is not running yet, waiting..."
+                fi
+                retries=$((retries - 1))
+                sleep 5
+              done
+              return 1
+            }
+
             echo "Checking core services..."
             if docker ps --format '{{.Names}}' | grep -qx "halo"; then
-              echo "Halo is already running."
+              echo "Halo is already running, checking health..."
             else
               echo "Halo is not running, starting mysql/redis/halo..."
               docker-compose up -d mysql redis halo
-              sleep 10
-              if ! docker ps --format '{{.Names}}' | grep -qx "halo"; then
-                echo "ERROR: halo container failed to start."
-                docker-compose ps mysql redis halo || true
-                docker-compose logs --tail 200 halo || true
-                exit 1
-              fi
+            fi
+            if ! wait_halo_ready; then
+              echo "ERROR: halo failed to become ready."
+              docker-compose ps mysql redis halo || true
+              docker-compose logs --tail 200 halo || true
+              exit 1
             fi
 
             docker-compose up -d --no-deps --build --force-recreate comment-filter auto-reply server-monitor

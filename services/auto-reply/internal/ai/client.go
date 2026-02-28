@@ -50,7 +50,14 @@ func NewClient(cfg ClientConfig, logger *slog.Logger) *Client {
 	if cfg.MaxReplyChars <= 0 {
 		cfg.MaxReplyChars = 120
 	}
-	if strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.APIURL) == "" {
+	cfg.APIKey = sanitizeAPIKey(cfg.APIKey)
+	cfg.APIURL = strings.TrimSpace(cfg.APIURL)
+	cfg.Model = strings.TrimSpace(cfg.Model)
+	if cfg.Model == "" {
+		cfg.Model = "MiniMax-Text-01"
+	}
+
+	if cfg.APIKey == "" || cfg.APIURL == "" {
 		cfg.Enabled = false
 	}
 	return &Client{
@@ -123,6 +130,10 @@ func (c *Client) GenerateReply(ctx context.Context, req GenerateRequest) (string
 		return "", ErrQuotaExceeded
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		lowerBody := strings.ToLower(string(respBytes))
+		if strings.Contains(lowerBody, "invalid api key") || strings.Contains(lowerBody, "invalid_api_key") {
+			return "", fmt.Errorf("ai api auth failed: invalid api key (url=%s, model=%s)", c.cfg.APIURL, c.cfg.Model)
+		}
 		return "", fmt.Errorf("ai api status %d: %s", resp.StatusCode, safeTrim(string(respBytes), 300))
 	}
 
@@ -224,4 +235,15 @@ func isQuotaError(text string) bool {
 		strings.Contains(lower, "rate limit") ||
 		strings.Contains(lower, "too many requests") ||
 		strings.Contains(lower, "insufficient")
+}
+
+func sanitizeAPIKey(key string) string {
+	key = strings.TrimSpace(key)
+	if len(key) >= 2 {
+		if (strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"")) ||
+			(strings.HasPrefix(key, "'") && strings.HasSuffix(key, "'")) {
+			key = key[1 : len(key)-1]
+		}
+	}
+	return strings.TrimSpace(key)
 }
