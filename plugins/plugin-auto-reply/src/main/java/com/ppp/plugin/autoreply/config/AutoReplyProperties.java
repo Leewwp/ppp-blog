@@ -1,4 +1,4 @@
-﻿package com.ppp.plugin.autoreply.config;
+package com.ppp.plugin.autoreply.config;
 
 import java.util.Optional;
 import lombok.Data;

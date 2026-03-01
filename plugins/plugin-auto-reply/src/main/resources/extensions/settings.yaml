@@ -1,4 +1,4 @@
-﻿apiVersion: v1alpha1
+apiVersion: v1alpha1
 kind: Setting
 metadata:
   name: plugin-auto-reply-settings

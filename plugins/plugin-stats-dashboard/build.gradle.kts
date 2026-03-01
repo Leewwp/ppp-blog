@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     java
     id("io.freefair.lombok") version "8.13"
     id("run.halo.plugin.devtools") version "0.6.1"
