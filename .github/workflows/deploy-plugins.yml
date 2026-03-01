@@ -1,4 +1,4 @@
-﻿name: Deploy Halo Plugins
+name: Deploy Halo Plugins
 
 on:
   push:
@@ -88,6 +88,15 @@ jobs:
               ls -1t "/opt/halo-blog/plugins/${plugin_dir}/build/libs/"*.jar | head -n 1
             }
 
+            strip_utf8_bom() {
+              find /opt/halo-blog/plugins -type f \
+                \( -name "*.java" -o -name "*.kts" -o -name "*.properties" -o -name "*.yaml" -o -name "*.yml" \) \
+                -print0 | while IFS= read -r -d '' f; do
+                  sed -i '1s/^\xEF\xBB\xBF//' "$f"
+                done
+            }
+
+            strip_utf8_bom
             build_plugin "plugin-comment-moderation"
             build_plugin "plugin-stats-dashboard"
             build_plugin "plugin-auto-reply"

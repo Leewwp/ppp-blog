@@ -1,4 +1,4 @@
-﻿package com.ppp.plugin.autoreply.listener;
+package com.ppp.plugin.autoreply.listener;
 
 import com.ppp.plugin.autoreply.config.AutoReplyProperties;
 import com.ppp.plugin.autoreply.service.ReplyServiceClient;
