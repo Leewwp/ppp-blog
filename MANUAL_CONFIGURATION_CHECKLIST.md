@@ -6,7 +6,6 @@ This repository now includes code-level support for:
 - request `TraceID` in Go services (`X-Trace-Id`)
 - Loki + Promtail + Grafana logs
 - optional SkyWalking tracing stack (Docker Compose profile: `tracing`)
-- versioned theme overrides (`theme-overrides/`) auto-synced by `scripts/apply-theme-overrides.sh`
 
 Complete the following manual steps on server/console.
 
@@ -27,14 +26,6 @@ Complete the following manual steps on server/console.
   - `replyAuthorName=博主` (or your desired name)
   - `replyAuthorEmail` (stable identity email)
   - `replyAuthorAvatar` (public avatar URL, optional)
-
-4. Theme override sync (for like/unlike state fix):
-- If you deploy manually, run:
-```bash
-chmod +x scripts/apply-theme-overrides.sh
-./scripts/apply-theme-overrides.sh
-docker-compose restart halo
-```
 
 ## 2. User registration (GitHub + email verification)
 
@@ -113,7 +104,8 @@ docker-compose --profile tracing up -d skywalking-oap skywalking-ui
 ```bash
 mkdir -p monitoring/skywalking/agent
 cd monitoring/skywalking/agent
-curl -fL -o agent.tgz https://archive.apache.org/dist/skywalking/java-agent/9.7.0/apache-skywalking-java-agent-9.7.0.tgz
+# Use a valid Java agent release (for SkyWalking OAP 9.7.0, 9.1.0 is safe).
+curl -fL -o agent.tgz https://archive.apache.org/dist/skywalking/java-agent/9.1.0/apache-skywalking-java-agent-9.1.0.tgz
 tar -xzf agent.tgz --strip-components=1
 rm -f agent.tgz
 test -f skywalking-agent.jar
