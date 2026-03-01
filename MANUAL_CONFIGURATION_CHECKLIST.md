@@ -165,3 +165,4 @@ docker logs --since 5m server-monitor | grep -Ei "trace_id|http request"
 Notes:
 - `curl -I http://127.0.0.1:8081` may return `405 Method Not Allowed` because UI route doesn't support HEAD.
 - Use `curl http://127.0.0.1:8081` (GET) or open the URL in browser.
+- OAP health endpoint is lowercase: `http://127.0.0.1:12800/healthcheck`
