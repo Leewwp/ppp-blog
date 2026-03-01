@@ -36,7 +36,7 @@ import run.halo.app.extension.Watcher;
 public class CommentReplyListener implements Watcher {
 
     private static final String MODERATION_STATUS_ANNO = "comment-moderation.halo.run/status";
-    private static final int MODERATION_MAX_CHECK_ATTEMPTS = 20;
+    private static final int MODERATION_MAX_CHECK_ATTEMPTS = 80;
     private static final Duration MODERATION_CHECK_INTERVAL = Duration.ofMillis(500);
 
     private final ReplyServiceClient replyServiceClient;
@@ -180,12 +180,14 @@ public class CommentReplyListener implements Watcher {
     private Mono<Boolean> waitForCommentReviewReady(String commentName, int attempt) {
         return extensionClient.fetch(Comment.class, commentName)
             .map(this::resolveModerationState)
-            .defaultIfEmpty(ModerationState.reject())
+            .defaultIfEmpty(ModerationState.pending())
             .flatMap(state -> {
                 if (state.terminal()) {
                     return Mono.just(state.allowReply());
                 }
                 if (attempt + 1 >= MODERATION_MAX_CHECK_ATTEMPTS) {
+                    log.info("skip auto-reply: moderation status still pending after {} checks, comment={}",
+                        MODERATION_MAX_CHECK_ATTEMPTS, commentName);
                     return Mono.just(false);
                 }
                 return Mono.delay(MODERATION_CHECK_INTERVAL)
@@ -200,13 +202,7 @@ public class CommentReplyListener implements Watcher {
 
     private ModerationState resolveModerationState(Comment comment) {
         if (comment == null || comment.getSpec() == null) {
-            return ModerationState.reject();
-        }
-
-        boolean approved = Boolean.TRUE.equals(comment.getSpec().getApproved());
-        boolean hidden = Boolean.TRUE.equals(comment.getSpec().getHidden());
-        if (!approved || hidden) {
-            return ModerationState.reject();
+            return ModerationState.pending();
         }
 
         String status = "";
@@ -215,13 +211,13 @@ public class CommentReplyListener implements Watcher {
         }
         status = status == null ? "" : status.trim().toUpperCase();
 
-        if (status.isBlank()) {
-            return ModerationState.pending();
-        }
+        boolean approved = Boolean.TRUE.equals(comment.getSpec().getApproved());
+        boolean hidden = Boolean.TRUE.equals(comment.getSpec().getHidden());
+
         return switch (status) {
-            case "PASS" -> ModerationState.allow();
+            case "PASS" -> (approved && !hidden) ? ModerationState.allow() : ModerationState.pending();
             case "MARK", "REJECT", "LOG_ONLY" -> ModerationState.reject();
-            default -> ModerationState.pending();
+            default -> status.isBlank() ? ModerationState.pending() : ModerationState.reject();
         };
     }
 
