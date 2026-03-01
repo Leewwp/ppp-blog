@@ -57,9 +57,25 @@ public class CommentEventListener implements Watcher {
         onCommentCreated(comment);
     }
 
+    @Override
+    public void onUpdate(Extension oldExtension, Extension newExtension) {
+        if (isDisposed() || !(newExtension instanceof Comment comment)) {
+            return;
+        }
+        if (hasModerationStatus(comment)) {
+            return;
+        }
+        onCommentCreated(comment);
+    }
+
     public void onCommentCreated(Comment comment) {
         if (comment == null || comment.getMetadata() == null || comment.getMetadata().getName() == null) {
             log.warn("skip moderation: invalid comment event payload");
+            return;
+        }
+        if (hasModerationStatus(comment)) {
+            log.debug("skip moderation: comment already moderated, comment={}",
+                comment.getMetadata().getName());
             return;
         }
 
@@ -213,5 +229,14 @@ public class CommentEventListener implements Watcher {
             name = comment.getSpec().getOwner().getName();
         }
         return name == null || name.isBlank() ? "anonymous" : name;
+    }
+
+    private boolean hasModerationStatus(Comment comment) {
+        if (comment == null || comment.getMetadata() == null
+            || comment.getMetadata().getAnnotations() == null) {
+            return false;
+        }
+        String status = comment.getMetadata().getAnnotations().get(ANNO_STATUS);
+        return status != null && !status.isBlank();
     }
 }
