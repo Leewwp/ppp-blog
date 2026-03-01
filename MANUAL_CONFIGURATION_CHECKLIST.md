@@ -99,6 +99,10 @@ docker-compose up -d prometheus grafana loki promtail
 docker-compose --profile tracing up -d skywalking-oap skywalking-ui
 ```
 
+TTL note for SkyWalking 9.7.0:
+- `SW_CORE_METRICS_DATA_TTL` must be >= `2`.
+- `SW_CORE_RECORD_DATA_TTL` should also be >= `2`.
+
 3. Download SkyWalking Java agent (required only if you want Halo traces in SkyWalking):
 
 ```bash

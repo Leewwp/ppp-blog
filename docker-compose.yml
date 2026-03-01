@@ -244,8 +244,8 @@ services:
     environment:
       - SW_CLUSTER=standalone
       - SW_STORAGE=h2
-      - SW_CORE_RECORD_DATA_TTL=1
-      - SW_CORE_METRICS_DATA_TTL=1
+      - SW_CORE_RECORD_DATA_TTL=2
+      - SW_CORE_METRICS_DATA_TTL=2
       - SW_JAVA_OPTS=-Xms128m -Xmx384m -XX:+UseG1GC
       - TZ=Asia/Shanghai
     mem_limit: 700m
