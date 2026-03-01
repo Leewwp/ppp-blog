@@ -244,12 +244,20 @@ services:
     environment:
       - SW_CLUSTER=standalone
       - SW_STORAGE=h2
+      - SW_HEALTH_CHECKER=default
+      - SW_TELEMETRY=prometheus
       - SW_CORE_RECORD_DATA_TTL=2
       - SW_CORE_METRICS_DATA_TTL=2
       - SW_JAVA_OPTS=-Xms128m -Xmx384m -XX:+UseG1GC
       - TZ=Asia/Shanghai
     mem_limit: 700m
     cpus: "0.60"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:12800/healthcheck >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
 
   skywalking-ui:
     image: apache/skywalking-ui:9.7.0
@@ -258,7 +266,8 @@ services:
     profiles:
       - tracing
     depends_on:
-      - skywalking-oap
+      skywalking-oap:
+        condition: service_healthy
     networks:
       halo-network:
     ports:
