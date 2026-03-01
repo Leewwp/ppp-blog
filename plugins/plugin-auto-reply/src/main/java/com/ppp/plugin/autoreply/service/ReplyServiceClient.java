@@ -17,7 +17,7 @@ import reactor.core.publisher.Mono;
 @Component
 public class ReplyServiceClient {
 
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(3);
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
     private static final String REPLY_PATH = "/api/v1/reply";
 
     private final WebClient webClient;
