@@ -117,7 +117,7 @@ public class CommentEventListener implements Watcher {
         );
 
         if (result.passed()) {
-            return markCommentStatus(commentName, eventComment, STATUS_PASS, result);
+            return updateComment(commentName, eventComment, true, false, STATUS_PASS, result);
         }
 
         return switch (strategy) {
