@@ -64,6 +64,17 @@ public class CommentReplyListener implements Watcher {
         onCommentCreated(comment);
     }
 
+    @Override
+    public void onUpdate(Extension oldExtension, Extension newExtension) {
+        if (isDisposed() || !(newExtension instanceof Comment newComment)) {
+            return;
+        }
+        if (!shouldProcessOnUpdate(oldExtension, newComment)) {
+            return;
+        }
+        onCommentCreated(newComment);
+    }
+
     public void onCommentCreated(Comment comment) {
         if (comment == null || comment.getMetadata() == null || comment.getMetadata().getName() == null) {
             log.warn("skip auto-reply: invalid comment event payload");
@@ -329,5 +340,39 @@ public class CommentReplyListener implements Watcher {
             name = comment.getSpec().getOwner().getName();
         }
         return name == null || name.isBlank() ? "anonymous" : name;
+    }
+
+    private boolean shouldProcessOnUpdate(Extension oldExtension, Comment newComment) {
+        String newStatus = moderationStatus(newComment);
+        boolean newVisible = isApprovedVisible(newComment);
+
+        String oldStatus = "";
+        boolean oldVisible = false;
+        if (oldExtension instanceof Comment oldComment) {
+            oldStatus = moderationStatus(oldComment);
+            oldVisible = isApprovedVisible(oldComment);
+        }
+
+        boolean statusBecameAvailable = oldStatus.isBlank() && !newStatus.isBlank();
+        boolean becameVisible = !oldVisible && newVisible;
+        return statusBecameAvailable || becameVisible;
+    }
+
+    private String moderationStatus(Comment comment) {
+        if (comment == null || comment.getMetadata() == null
+            || comment.getMetadata().getAnnotations() == null) {
+            return "";
+        }
+        String value = comment.getMetadata().getAnnotations().getOrDefault(MODERATION_STATUS_ANNO, "");
+        return value == null ? "" : value.trim().toUpperCase();
+    }
+
+    private boolean isApprovedVisible(Comment comment) {
+        if (comment == null || comment.getSpec() == null) {
+            return false;
+        }
+        boolean approved = Boolean.TRUE.equals(comment.getSpec().getApproved());
+        boolean hidden = Boolean.TRUE.equals(comment.getSpec().getHidden());
+        return approved && !hidden;
     }
 }
