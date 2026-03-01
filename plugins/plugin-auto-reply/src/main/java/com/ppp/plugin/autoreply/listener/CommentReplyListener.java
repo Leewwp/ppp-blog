@@ -1,4 +1,4 @@
-package com.ppp.plugin.autoreply.listener;
+﻿package com.ppp.plugin.autoreply.listener;
 
 import com.ppp.plugin.autoreply.config.AutoReplyProperties;
 import com.ppp.plugin.autoreply.service.ReplyServiceClient;
@@ -8,6 +8,8 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +18,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-import run.halo.app.core.extension.User;
 import run.halo.app.core.extension.content.Comment;
 import run.halo.app.core.extension.content.Post;
 import run.halo.app.core.extension.content.Reply;
@@ -36,6 +37,8 @@ import run.halo.app.extension.Watcher;
 public class CommentReplyListener implements Watcher {
 
     private static final String MODERATION_STATUS_ANNO = "comment-moderation.halo.run/status";
+    private static final String AUTO_REPLY_SOURCE_ANNO = "auto-reply.halo.run/generated";
+    private static final String AUTO_REPLY_SOURCE_ANNO_VALUE = "true";
     private static final int MODERATION_MAX_CHECK_ATTEMPTS = 80;
     private static final Duration MODERATION_CHECK_INTERVAL = Duration.ofMillis(500);
 
@@ -103,7 +106,7 @@ public class CommentReplyListener implements Watcher {
                         AutoReplyRequest request = new AutoReplyRequest(commentName, content, postTitle, author);
                         return replyServiceClient.generateReply(settings.replyServiceUrl(), request);
                     })
-                    .flatMap(response -> maybeCreateReply(commentName, settings.replyAuthorName(), response));
+                    .flatMap(response -> maybeCreateReply(commentName, settings, response));
             })
             .doOnError(error -> log.error("auto-reply processing failed, comment={}, error={}",
                 commentName, error.toString(), error))
@@ -130,7 +133,7 @@ public class CommentReplyListener implements Watcher {
         return this.disposed;
     }
 
-    private Mono<Void> maybeCreateReply(String commentName, String replyAuthorName,
+    private Mono<Void> maybeCreateReply(String commentName, AutoReplyProperties.Settings settings,
         AutoReplyResponse response) {
         if (response == null || !response.shouldReply()) {
             return Mono.empty();
@@ -162,7 +165,7 @@ public class CommentReplyListener implements Watcher {
                                 commentName);
                             return Mono.<Void>empty();
                         }
-                        return createReply(commentName, replyContent, replyAuthorName).then();
+                        return createReply(commentName, replyContent, settings).then();
                     })
                     .doOnSuccess(ignore -> log.info(
                         "auto-reply created, comment={}, delaySeconds={}, matchedRule={}",
@@ -171,17 +174,46 @@ public class CommentReplyListener implements Watcher {
     }
 
     private Mono<Boolean> hasAutoReplyForComment(String commentName) {
+        String configuredReplyOwnerEmail = normalizeAuthorEmail(autoReplyProperties.current().replyAuthorEmail());
+
         return extensionClient.listAll(Reply.class, ListOptions.builder().build(), Sort.unsorted())
             .filter(reply -> reply != null && reply.getSpec() != null)
             .filter(reply -> commentName.equals(reply.getSpec().getCommentName()))
-            .filter(reply -> reply.getSpec().getOwner() != null)
-            .filter(reply -> UserService.GHOST_USER_NAME.equals(reply.getSpec().getOwner().getName()))
+            .filter(reply -> isAutoReply(reply, configuredReplyOwnerEmail))
             .hasElements()
             .onErrorResume(error -> {
                 log.warn("failed to check existing auto-reply, comment={}, error={}",
                     commentName, error.toString());
                 return Mono.just(false);
             });
+    }
+
+    private boolean isAutoReply(Reply reply, String configuredReplyOwnerEmail) {
+        if (reply == null || reply.getSpec() == null) {
+            return false;
+        }
+
+        if (reply.getMetadata() != null && reply.getMetadata().getAnnotations() != null) {
+            String source = reply.getMetadata().getAnnotations().getOrDefault(AUTO_REPLY_SOURCE_ANNO, "");
+            if (AUTO_REPLY_SOURCE_ANNO_VALUE.equalsIgnoreCase(source)) {
+                return true;
+            }
+        }
+
+        Comment.CommentOwner owner = reply.getSpec().getOwner();
+        if (owner == null) {
+            return false;
+        }
+
+        String kind = Optional.ofNullable(owner.getKind()).orElse("").trim();
+        String name = Optional.ofNullable(owner.getName()).orElse("").trim();
+
+        if ("User".equalsIgnoreCase(kind) && UserService.GHOST_USER_NAME.equals(name)) {
+            return true;
+        }
+
+        return Comment.CommentOwner.KIND_EMAIL.equalsIgnoreCase(kind)
+            && configuredReplyOwnerEmail.equalsIgnoreCase(name);
     }
 
     private Mono<Boolean> waitForCommentReviewReady(String commentName) {
@@ -228,7 +260,12 @@ public class CommentReplyListener implements Watcher {
         return switch (status) {
             case "PASS" -> (approved && !hidden) ? ModerationState.allow() : ModerationState.pending();
             case "MARK", "REJECT", "LOG_ONLY" -> ModerationState.reject();
-            default -> status.isBlank() ? ModerationState.pending() : ModerationState.reject();
+            default -> {
+                if (status.isBlank()) {
+                    yield (approved && !hidden) ? ModerationState.allow() : ModerationState.pending();
+                }
+                yield ModerationState.reject();
+            }
         };
     }
 
@@ -246,17 +283,25 @@ public class CommentReplyListener implements Watcher {
         }
     }
 
-    private Mono<Reply> createReply(String commentName, String replyContent, String replyAuthorName) {
+    private Mono<Reply> createReply(String commentName, String replyContent,
+        AutoReplyProperties.Settings settings) {
         Reply reply = new Reply();
         reply.setMetadata(new Metadata());
         reply.getMetadata().setName(UUID.randomUUID().toString());
+        Map<String, String> replyMetaAnnotations = new HashMap<>();
+        replyMetaAnnotations.put(AUTO_REPLY_SOURCE_ANNO, AUTO_REPLY_SOURCE_ANNO_VALUE);
+        reply.getMetadata().setAnnotations(replyMetaAnnotations);
 
         Reply.ReplySpec spec = new Reply.ReplySpec();
         reply.setSpec(spec);
         spec.setCommentName(commentName);
         spec.setRaw(replyContent);
         spec.setContent(replyContent);
-        spec.setOwner(systemOwner(replyAuthorName));
+        spec.setOwner(autoReplyOwner(
+            settings.replyAuthorName(),
+            settings.replyAuthorEmail(),
+            settings.replyAuthorAvatar()
+        ));
         spec.setCreationTime(Instant.now());
         spec.setPriority(0);
         spec.setTop(false);
@@ -309,12 +354,29 @@ public class CommentReplyListener implements Watcher {
         return "";
     }
 
-    private Comment.CommentOwner systemOwner(String replyAuthorName) {
+    private Comment.CommentOwner autoReplyOwner(String replyAuthorName, String replyAuthorEmail,
+        String replyAuthorAvatar) {
         Comment.CommentOwner owner = new Comment.CommentOwner();
-        owner.setKind(User.KIND);
-        owner.setName(UserService.GHOST_USER_NAME);
+        owner.setKind(Comment.CommentOwner.KIND_EMAIL);
+        owner.setName(normalizeAuthorEmail(replyAuthorEmail));
         owner.setDisplayName(replyAuthorName);
+
+        String avatar = Optional.ofNullable(replyAuthorAvatar).map(String::trim).orElse("");
+        if (!avatar.isBlank()) {
+            Map<String, String> annotations = new HashMap<>();
+            annotations.put(Comment.CommentOwner.AVATAR_ANNO, avatar);
+            owner.setAnnotations(annotations);
+        }
+
         return owner;
+    }
+
+    private String normalizeAuthorEmail(String raw) {
+        String value = Optional.ofNullable(raw)
+            .map(String::trim)
+            .filter(v -> !v.isEmpty())
+            .orElse(AutoReplyProperties.DEFAULT_REPLY_AUTHOR_EMAIL);
+        return value.toLowerCase();
     }
 
     private long normalizeDelaySeconds(Integer delaySeconds) {
