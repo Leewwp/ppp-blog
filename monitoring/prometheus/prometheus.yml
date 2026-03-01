@@ -27,3 +27,15 @@ scrape_configs:
     static_configs:
       - targets:
           - server-monitor:8093
+
+  # Loki metrics.
+  - job_name: loki
+    static_configs:
+      - targets:
+          - loki:3100
+
+  # Promtail self metrics.
+  - job_name: promtail
+    static_configs:
+      - targets:
+          - promtail:9080

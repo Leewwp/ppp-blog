@@ -368,3 +368,12 @@ See [AI_MODERATION_REPLY_GUIDE.md](AI_MODERATION_REPLY_GUIDE.md) for:
 - comment-filter AI re-check flow
 - auto-reply AI generation and quota limits
 - rule management APIs
+
+## Manual Setup Checklist
+
+See [MANUAL_CONFIGURATION_CHECKLIST.md](MANUAL_CONFIGURATION_CHECKLIST.md) for:
+- guest comment and registration setup in Halo
+- plugin runtime settings
+- Loki/Promtail/Grafana log stack
+- optional SkyWalking tracing profile
+- Grafana alerting (email/webhook) steps

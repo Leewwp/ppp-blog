@@ -1,4 +1,4 @@
-apiVersion: v1alpha1
+﻿apiVersion: v1alpha1
 kind: Setting
 metadata:
   name: plugin-auto-reply-settings
@@ -23,4 +23,15 @@ spec:
           label: 回复作者显示名
           value: "博主"
           validation: required
-          help: 自动回复在前台展示的作者名称
+          help: 自动回复在前台显示的作者名称
+        - $formkit: text
+          name: replyAuthorEmail
+          label: 回复作者邮箱
+          value: "blogger@local"
+          validation: required|email
+          help: 自动回复身份邮箱，用于稳定展示作者信息
+        - $formkit: text
+          name: replyAuthorAvatar
+          label: 回复作者头像URL
+          value: ""
+          help: 自动回复头像地址，可留空

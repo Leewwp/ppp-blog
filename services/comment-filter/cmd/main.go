@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,6 +21,12 @@ import (
 	"github.com/ppp-blog/comment-filter/internal/service"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+)
+
+const (
+	traceIDHeader     = "X-Trace-Id"
+	requestIDHeader   = "X-Request-Id"
+	traceIDContextKey = "trace_id"
 )
 
 func main() {
@@ -56,17 +65,8 @@ func main() {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
-	router.Use(func(c *gin.Context) {
-		start := time.Now()
-		c.Next()
-		logger.Info("http request",
-			"method", c.Request.Method,
-			"path", c.FullPath(),
-			"status", c.Writer.Status(),
-			"duration_ms", time.Since(start).Milliseconds(),
-			"client_ip", c.ClientIP(),
-		)
-	})
+	router.Use(traceIDMiddleware())
+	router.Use(requestLogger(logger))
 	router.Use(metrics.Middleware())
 	router.GET("/metrics", metrics.MetricsHandler())
 
@@ -149,4 +149,59 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func requestLogger(logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+
+		path := c.FullPath()
+		if path == "" {
+			path = c.Request.URL.Path
+		}
+
+		logger.Info("http request",
+			"method", c.Request.Method,
+			"path", path,
+			"status", c.Writer.Status(),
+			"duration_ms", time.Since(start).Milliseconds(),
+			"client_ip", c.ClientIP(),
+			"trace_id", getTraceID(c),
+		)
+	}
+}
+
+func traceIDMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		traceID := strings.TrimSpace(c.GetHeader(traceIDHeader))
+		if traceID == "" {
+			traceID = strings.TrimSpace(c.GetHeader(requestIDHeader))
+		}
+		if traceID == "" {
+			traceID = newTraceID()
+		}
+
+		c.Set(traceIDContextKey, traceID)
+		c.Request.Header.Set(traceIDHeader, traceID)
+		c.Writer.Header().Set(traceIDHeader, traceID)
+		c.Next()
+	}
+}
+
+func getTraceID(c *gin.Context) string {
+	if value, ok := c.Get(traceIDContextKey); ok {
+		if traceID, castOK := value.(string); castOK && traceID != "" {
+			return traceID
+		}
+	}
+	return ""
+}
+
+func newTraceID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 16)
+	}
+	return hex.EncodeToString(b)
 }
