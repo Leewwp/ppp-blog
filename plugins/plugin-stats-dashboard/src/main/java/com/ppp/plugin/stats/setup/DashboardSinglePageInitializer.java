@@ -20,6 +20,7 @@ import run.halo.app.core.extension.content.SinglePage;
 import run.halo.app.core.extension.content.Snapshot;
 import run.halo.app.core.user.service.UserService;
 import run.halo.app.extension.Metadata;
+import run.halo.app.extension.MetadataOperator;
 import run.halo.app.extension.ReactiveExtensionClient;
 import run.halo.app.extension.Ref;
 
@@ -130,10 +131,11 @@ public class DashboardSinglePageInitializer {
     private boolean normalizePage(SinglePage page) {
         boolean changed = false;
 
-        Metadata metadata = page.getMetadata();
+        MetadataOperator metadata = page.getMetadata();
         if (metadata == null) {
-            metadata = new Metadata();
-            page.setMetadata(metadata);
+            Metadata newMetadata = new Metadata();
+            page.setMetadata(newMetadata);
+            metadata = newMetadata;
             changed = true;
         }
         if (!Objects.equals(metadata.getName(), PAGE_NAME)) {
