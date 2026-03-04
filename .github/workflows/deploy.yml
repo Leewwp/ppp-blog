@@ -8,6 +8,8 @@ on:
     paths-ignore:
       - "services/**"
       - "plugins/**"
+      - "docs/dashboard-sheet-code.html"
+      - "docs/dashboard-prompt.html"
       - ".github/workflows/deploy-services.yml"
       - ".github/workflows/deploy-plugins.yml"
   workflow_dispatch:

@@ -1,10 +1,15 @@
 package com.ppp.plugin.stats.setup;
 
 import jakarta.annotation.PostConstruct;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,97 +32,15 @@ import run.halo.app.extension.Ref;
 public class DashboardSinglePageInitializer {
 
     private static final String PAGE_NAME = "stats-dashboard-page";
-    private static final String PAGE_SLUG = "stats-dashboard";
+    private static final String PAGE_SLUG = "dashboard";
     private static final String PAGE_TITLE = "数据看板";
+    private static final String PAGE_TEMPLATE = "sheet_only_header_footer";
     private static final String MANAGED_ANNO = "stats-dashboard.halo.run/managed";
 
-    private static final String DASHBOARD_HTML = """
-        <section style="max-width:960px;margin:0 auto;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-          <h2 style="margin:0 0 16px;">站点数据看板</h2>
-          <p style="margin:0 0 20px;color:#555;">由 plugin-stats-dashboard 提供，数据每次刷新实时拉取。</p>
-          <div id="stats-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px;"></div>
-          <h3 style="margin:0 0 12px;">最近 7 天访客趋势</h3>
-          <div id="stats-history" style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fafafa;"></div>
-          <p id="stats-error" style="display:none;color:#b91c1c;margin-top:16px;"></p>
-        </section>
-        <script>
-          const cardsEl = document.getElementById("stats-cards");
-          const historyEl = document.getElementById("stats-history");
-          const errorEl = document.getElementById("stats-error");
-
-          const cardDefs = [
-            ["onlineVisitors", "在线访客"],
-            ["todayViews", "今日 PV"],
-            ["totalPosts", "文章总数"],
-            ["totalComments", "评论总数"],
-            ["totalViews", "总访问量"]
-          ];
-
-          function renderCards(stats) {
-            cardsEl.innerHTML = cardDefs.map(([key, label]) => {
-              const value = Number(stats[key] ?? 0).toLocaleString();
-              return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px;background:#fff;">
-                        <div style="font-size:12px;color:#6b7280;">${label}</div>
-                        <div style="margin-top:8px;font-size:26px;font-weight:700;color:#111827;">${value}</div>
-                      </div>`;
-            }).join("");
-          }
-
-          function renderHistory(history) {
-            if (!Array.isArray(history) || history.length === 0) {
-              historyEl.innerHTML = "<div style='color:#6b7280;'>暂无历史数据</div>";
-              return;
-            }
-            historyEl.innerHTML = history.map(item => {
-              const date = item.date ?? "-";
-              const views = Number(item.views ?? 0).toLocaleString();
-              return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #e5e7eb;">
-                        <span>${date}</span><strong>${views}</strong>
-                      </div>`;
-            }).join("");
-          }
-
-          async function fetchJsonWithFallback(primary, fallback) {
-            const primaryRes = await fetch(primary, { credentials: "include" });
-            if (primaryRes.ok) {
-              return primaryRes.json();
-            }
-            if (!fallback) {
-              throw new Error(`request failed: ${primary} -> ${primaryRes.status}`);
-            }
-            const fallbackRes = await fetch(fallback, { credentials: "include" });
-            if (!fallbackRes.ok) {
-              throw new Error(`request failed: ${primary}/${fallback} -> ${primaryRes.status}/${fallbackRes.status}`);
-            }
-            return fallbackRes.json();
-          }
-
-          async function loadStats() {
-            try {
-              const [stats, history] = await Promise.all([
-                fetchJsonWithFallback(
-                  "/apis/ppp.run/v1alpha1/stats/public",
-                  "/apis/ppp.run/v1alpha1/stats"
-                ),
-                fetchJsonWithFallback(
-                  "/apis/ppp.run/v1alpha1/stats/history/public",
-                  "/apis/ppp.run/v1alpha1/stats/history"
-                )
-              ]);
-              renderCards(stats);
-              renderHistory(history.history || []);
-            } catch (err) {
-              errorEl.style.display = "block";
-              errorEl.textContent = "看板数据加载失败，请检查插件和接口状态。";
-              console.error(err);
-            }
-          }
-
-          loadStats();
-        </script>
-        """;
+    private static final String DASHBOARD_RESOURCE_PATH = "/dashboard/dashboard-sheet-code.html";
 
     private final ReactiveExtensionClient extensionClient;
+    private final String dashboardHtml = loadDashboardHtml();
 
     @PostConstruct
     public void ensureDashboardSinglePage() {
@@ -132,21 +55,60 @@ public class DashboardSinglePageInitializer {
 
     private Mono<SinglePage> ensurePage() {
         return extensionClient.fetch(SinglePage.class, PAGE_NAME)
+            .flatMap(this::syncExistingPage)
             .switchIfEmpty(Mono.defer(this::createPageWithContent));
+    }
+
+    private Mono<SinglePage> syncExistingPage(SinglePage page) {
+        boolean changed = normalizePage(page);
+        Mono<SinglePage> pageMono = changed ? extensionClient.update(page) : Mono.just(page);
+
+        return needsSnapshotRefresh(page)
+            .flatMap(needsRefresh -> {
+                if (!needsRefresh) {
+                    return pageMono;
+                }
+                return pageMono.flatMap(this::replaceSnapshot);
+            });
+    }
+
+    private Mono<Boolean> needsSnapshotRefresh(SinglePage page) {
+        String snapshotName = firstNonBlank(
+            page.getSpec().getHeadSnapshot(),
+            page.getSpec().getReleaseSnapshot(),
+            page.getSpec().getBaseSnapshot()
+        );
+        if (snapshotName == null) {
+            return Mono.just(true);
+        }
+
+        return extensionClient.fetch(Snapshot.class, snapshotName)
+            .map(snapshot -> shouldRefreshSnapshot(snapshot.getSpec().getRawPatch()))
+            .defaultIfEmpty(true);
+    }
+
+    private boolean shouldRefreshSnapshot(String rawPatch) {
+        if (rawPatch == null || rawPatch.isBlank()) {
+            return true;
+        }
+        return !dashboardHtml.equals(rawPatch);
     }
 
     private Mono<SinglePage> createPageWithContent() {
         SinglePage page = buildPage();
-        return extensionClient.create(page)
-            .flatMap(created -> createBaseSnapshot(created)
-                .flatMap(snapshot -> {
-                    String snapshotName = snapshot.getMetadata().getName();
-                    created.getSpec().setBaseSnapshot(snapshotName);
-                    created.getSpec().setHeadSnapshot(snapshotName);
-                    created.getSpec().setReleaseSnapshot(snapshotName);
-                    created.getSpec().setPublishTime(Instant.now());
-                    return extensionClient.update(created);
-                }));
+        return extensionClient.create(page).flatMap(this::replaceSnapshot);
+    }
+
+    private Mono<SinglePage> replaceSnapshot(SinglePage page) {
+        return createBaseSnapshot(page)
+            .flatMap(snapshot -> {
+                String snapshotName = snapshot.getMetadata().getName();
+                page.getSpec().setBaseSnapshot(snapshotName);
+                page.getSpec().setHeadSnapshot(snapshotName);
+                page.getSpec().setReleaseSnapshot(snapshotName);
+                page.getSpec().setPublishTime(Instant.now());
+                return extensionClient.update(page);
+            });
     }
 
     private SinglePage buildPage() {
@@ -155,27 +117,75 @@ public class DashboardSinglePageInitializer {
         Metadata metadata = new Metadata();
         metadata.setName(PAGE_NAME);
         metadata.setAnnotations(new HashMap<>());
-        metadata.getAnnotations().put(MANAGED_ANNO, Boolean.TRUE.toString());
         page.setMetadata(metadata);
 
         SinglePage.SinglePageSpec spec = new SinglePage.SinglePageSpec();
-        spec.setTitle(PAGE_TITLE);
-        spec.setSlug(PAGE_SLUG);
-        spec.setOwner(UserService.GHOST_USER_NAME);
-        spec.setDeleted(Boolean.FALSE);
-        spec.setPublish(Boolean.TRUE);
-        spec.setPinned(Boolean.FALSE);
-        spec.setAllowComment(Boolean.FALSE);
-        spec.setVisible(Post.VisibleEnum.PUBLIC);
-        spec.setPriority(0);
-
-        Post.Excerpt excerpt = new Post.Excerpt();
-        excerpt.setAutoGenerate(Boolean.TRUE);
-        excerpt.setRaw("");
-        spec.setExcerpt(excerpt);
-
+        spec.setExcerpt(new Post.Excerpt());
         page.setSpec(spec);
+
+        normalizePage(page);
         return page;
+    }
+
+    private boolean normalizePage(SinglePage page) {
+        boolean changed = false;
+
+        Metadata metadata = page.getMetadata();
+        if (metadata == null) {
+            metadata = new Metadata();
+            page.setMetadata(metadata);
+            changed = true;
+        }
+        if (!Objects.equals(metadata.getName(), PAGE_NAME)) {
+            metadata.setName(PAGE_NAME);
+            changed = true;
+        }
+        Map<String, String> annotations = metadata.getAnnotations();
+        if (annotations == null) {
+            annotations = new HashMap<>();
+            metadata.setAnnotations(annotations);
+            changed = true;
+        }
+        if (!Objects.equals(annotations.get(MANAGED_ANNO), Boolean.TRUE.toString())) {
+            annotations.put(MANAGED_ANNO, Boolean.TRUE.toString());
+            changed = true;
+        }
+
+        SinglePage.SinglePageSpec spec = page.getSpec();
+        if (spec == null) {
+            spec = new SinglePage.SinglePageSpec();
+            page.setSpec(spec);
+            changed = true;
+        }
+        changed |= setIfDifferent(spec.getTitle(), PAGE_TITLE, spec::setTitle);
+        changed |= setIfDifferent(spec.getSlug(), PAGE_SLUG, spec::setSlug);
+        changed |= setIfDifferent(spec.getTemplate(), PAGE_TEMPLATE, spec::setTemplate);
+        changed |= setIfDifferent(spec.getOwner(), UserService.GHOST_USER_NAME, spec::setOwner);
+        changed |= setIfDifferent(spec.getDeleted(), Boolean.FALSE, spec::setDeleted);
+        changed |= setIfDifferent(spec.getPublish(), Boolean.TRUE, spec::setPublish);
+        changed |= setIfDifferent(spec.getPinned(), Boolean.FALSE, spec::setPinned);
+        changed |= setIfDifferent(spec.getAllowComment(), Boolean.FALSE, spec::setAllowComment);
+        changed |= setIfDifferent(spec.getVisible(), Post.VisibleEnum.PUBLIC, spec::setVisible);
+        changed |= setIfDifferent(spec.getPriority(), 0, spec::setPriority);
+
+        Post.Excerpt excerpt = spec.getExcerpt();
+        if (excerpt == null) {
+            excerpt = new Post.Excerpt();
+            spec.setExcerpt(excerpt);
+            changed = true;
+        }
+        changed |= setIfDifferent(excerpt.getAutoGenerate(), Boolean.TRUE, excerpt::setAutoGenerate);
+        changed |= setIfDifferent(excerpt.getRaw(), "", excerpt::setRaw);
+
+        return changed;
+    }
+
+    private <T> boolean setIfDifferent(T current, T expected, java.util.function.Consumer<T> setter) {
+        if (Objects.equals(current, expected)) {
+            return false;
+        }
+        setter.accept(expected);
+        return true;
     }
 
     private Mono<Snapshot> createBaseSnapshot(SinglePage page) {
@@ -190,13 +200,39 @@ public class DashboardSinglePageInitializer {
         Snapshot.SnapShotSpec spec = new Snapshot.SnapShotSpec();
         spec.setSubjectRef(Ref.of(page));
         spec.setRawType("html");
-        spec.setRawPatch(DASHBOARD_HTML);
-        spec.setContentPatch(DASHBOARD_HTML);
+        spec.setRawPatch(dashboardHtml);
+        spec.setContentPatch(dashboardHtml);
         spec.setLastModifyTime(Instant.now());
         spec.setOwner(UserService.GHOST_USER_NAME);
         spec.setContributors(new LinkedHashSet<>(List.of(UserService.GHOST_USER_NAME)));
         snapshot.setSpec(spec);
 
         return extensionClient.create(snapshot);
+    }
+
+    private String loadDashboardHtml() {
+        try (InputStream inputStream =
+                 DashboardSinglePageInitializer.class.getResourceAsStream(DASHBOARD_RESOURCE_PATH)) {
+            if (inputStream == null) {
+                throw new IllegalStateException(
+                    "Dashboard template resource not found: " + DASHBOARD_RESOURCE_PATH
+                );
+            }
+            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException ex) {
+            throw new IllegalStateException(
+                "Failed to load dashboard template resource: " + DASHBOARD_RESOURCE_PATH,
+                ex
+            );
+        }
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 }

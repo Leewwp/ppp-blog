@@ -1,0 +1,805 @@
+﻿<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+
+<style>
+/* ===== 数据看板全局样式 ===== */
+.dashboard-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.dashboard-title {
+  text-align: center;
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--joe-font-color, #333);
+}
+
+.dashboard-subtitle {
+  text-align: center;
+  font-size: 14px;
+  color: #999;
+  margin-bottom: 30px;
+}
+
+.dashboard-section-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 30px 0 16px;
+  padding-left: 12px;
+  border-left: 4px solid var(--joe-theme-color, #1890ff);
+  color: var(--joe-font-color, #333);
+}
+
+/* ===== 统计卡片 ===== */
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--joe-card-bg, #fff);
+  border-radius: 12px;
+  padding: 20px 16px;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card .stat-icon { font-size: 28px; margin-bottom: 8px; }
+.stat-card .stat-value { font-size: 28px; font-weight: 700; color: var(--joe-theme-color, #1890ff); margin-bottom: 4px; }
+.stat-card .stat-label { font-size: 13px; color: #999; }
+
+/* ===== 图表容器 ===== */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.chart-box {
+  background: var(--joe-card-bg, #fff);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.chart-box-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--joe-font-color, #333); }
+.chart-box canvas { width: 100% !important; max-height: 280px; }
+
+/* ===== 热门文章列表 ===== */
+.hot-posts-list { list-style: none; padding: 0; margin: 0; }
+.hot-posts-list li { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.06); }
+.hot-posts-list li:last-child { border-bottom: none; }
+.hot-posts-list .rank { width: 28px; height: 28px; border-radius: 50%; background: #eee; color: #666; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; margin-right: 12px; flex-shrink: 0; }
+.hot-posts-list li:nth-child(1) .rank { background: #ff4d4f; color: #fff; }
+.hot-posts-list li:nth-child(2) .rank { background: #ff7a45; color: #fff; }
+.hot-posts-list li:nth-child(3) .rank { background: #ffa940; color: #fff; }
+.hot-posts-list .post-title { flex: 1; font-size: 14px; color: var(--joe-font-color, #333); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hot-posts-list .post-title:hover { color: var(--joe-theme-color, #1890ff); }
+.hot-posts-list .post-visits { font-size: 13px; color: #999; margin-left: 12px; flex-shrink: 0; }
+
+/* ===== 标签云 ===== */
+.tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+.tag-cloud .tag-item { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 13px; text-decoration: none; transition: opacity 0.2s; }
+.tag-cloud .tag-item:hover { opacity: 0.8; }
+
+/* ===== 服务器监控 ===== */
+.monitor-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.monitor-card { background: var(--joe-card-bg, #fff); border-radius: 12px; padding: 20px; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08); }
+.monitor-card .monitor-label { font-size: 13px; color: #999; margin-bottom: 8px; }
+.monitor-card .monitor-value { font-size: 24px; font-weight: 700; margin-bottom: 10px; }
+.progress-bar { width: 100%; height: 8px; background: #f0f0f0; border-radius: 4px; overflow: hidden; }
+.progress-bar .progress-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+.progress-green { background: #52c41a; }
+.progress-yellow { background: #faad14; }
+.progress-red { background: #ff4d4f; }
+
+/* ===== 状态指示 ===== */
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; animation: pulse 2s infinite; }
+.status-dot.online { background: #52c41a; }
+.status-dot.offline { background: #ff4d4f; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.last-update { text-align: right; font-size: 12px; color: #bbb; margin-top: 4px; }
+.loading-placeholder { text-align: center; padding: 40px; color: #ccc; font-size: 14px; }
+
+/* ===== 深色模式适配 ===== */
+[data-mode="dark"] .stat-card,
+[data-mode="dark"] .chart-box,
+[data-mode="dark"] .monitor-card { background: #1e1e1e; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3); }
+[data-mode="dark"] .progress-bar { background: #333; }
+
+/* ===== 移动端适配 ===== */
+@media (max-width: 768px) {
+  .dashboard-wrapper { padding: 12px 10px; }
+  .dashboard-title { font-size: 22px; }
+  .stat-cards { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .stat-card { padding: 14px 10px; }
+  .stat-card .stat-value { font-size: 22px; }
+  .chart-grid { grid-template-columns: 1fr; }
+  .monitor-cards { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+}
+@media (max-width: 480px) {
+  .stat-cards { grid-template-columns: repeat(2, 1fr); }
+  .monitor-cards { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="dashboard-wrapper">
+  <h1 class="dashboard-title">数据看板</h1>
+  <p class="dashboard-subtitle">Halo Public API + Server Monitor（无需前端密钥）</p>
+
+  <h2 class="dashboard-section-title">📊 博客统计</h2>
+  <div class="stat-cards" id="blogStatCards">
+    <div class="loading-placeholder">加载中...</div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="chart-box">
+      <div class="chart-box-title">📈 最近 30 天发布趋势</div>
+      <canvas id="postTrendChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <div class="chart-box-title">📂 分类文章占比</div>
+      <canvas id="categoryChart"></canvas>
+    </div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="chart-box">
+      <div class="chart-box-title">🔥 热门文章 Top 10</div>
+      <ol class="hot-posts-list" id="hotPostsList">
+        <div class="loading-placeholder">加载中...</div>
+      </ol>
+    </div>
+    <div class="chart-box">
+      <div class="chart-box-title">🏷️ 标签云</div>
+      <div class="tag-cloud" id="tagCloud">
+        <div class="loading-placeholder">加载中...</div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="dashboard-section-title">🖥️ 服务器监控 <span class="status-dot online" id="serverStatus"></span><span id="serverStatusText" style="font-size:13px;color:#999;">在线</span></h2>
+
+  <div class="monitor-cards" id="monitorCards">
+    <div class="loading-placeholder">加载中...</div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="chart-box">
+      <div class="chart-box-title">📉 CPU 使用率趋势</div>
+      <canvas id="cpuChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <div class="chart-box-title">🌐 网络 I/O</div>
+      <canvas id="networkChart"></canvas>
+    </div>
+  </div>
+
+  <p class="last-update">监控数据每 30 秒自动刷新 | 上次更新: <span id="lastUpdateTime">--</span></p>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ========== 配置 ==========
+  var CONFIG = {
+    // Halo 2.x Public API（同域）
+    haloApisBase: '/apis',
+    haloSiteApiGroup: '/api.halo.run/v1alpha1',
+    haloContentApiGroup: '/api.content.halo.run/v1alpha1',
+
+    // Server Monitor API（通过 Nginx 反向代理）
+    monitorApiBase: '/monitor-api/api/v1',
+
+    monitorRefreshInterval: 30000,
+    chartMaxPoints: 20,
+    postFetchSize: 200,
+    categoryFetchSize: 200,
+    tagFetchSize: 200,
+    themeColor: '#1890ff'
+  };
+
+  // ========== 工具函数 ==========
+  function toNumber(value, fallback) {
+    var n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return '--';
+    if (bytes === 0) return '0 B';
+    var k = 1024;
+    var sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = Math.floor(Math.log(bytes) / Math.log(k));
+    return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+  }
+
+  function formatBytesPerSec(bytes) {
+    var text = formatBytes(bytes);
+    return text === '--' ? '--' : text + '/s';
+  }
+
+  function getProgressColor(percent) {
+    if (percent < 60) return 'progress-green';
+    if (percent < 85) return 'progress-yellow';
+    return 'progress-red';
+  }
+
+  function getValueColor(percent) {
+    if (percent < 60) return '#52c41a';
+    if (percent < 85) return '#faad14';
+    return '#ff4d4f';
+  }
+
+  function formatTime(dateStr) {
+    var d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '--:--:--';
+    return d.getHours().toString().padStart(2, '0') + ':'
+      + d.getMinutes().toString().padStart(2, '0') + ':'
+      + d.getSeconds().toString().padStart(2, '0');
+  }
+
+  function toDate(value) {
+    if (!value) return null;
+    var d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function dateKeyLocal(date) {
+    var y = date.getFullYear();
+    var m = String(date.getMonth() + 1).padStart(2, '0');
+    var d = String(date.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
+
+  function daysBetween(startDate, endDate) {
+    if (!startDate || !endDate) return null;
+    var start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    var end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+    var diff = end.getTime() - start.getTime();
+    if (diff < 0) return 0;
+    return Math.floor(diff / 86400000);
+  }
+
+  function parseListResult(res) {
+    if (Array.isArray(res)) {
+      return { items: res, total: res.length, page: 0, size: res.length };
+    }
+    if (res && Array.isArray(res.items)) {
+      return {
+        items: res.items,
+        total: toNumber(res.total, res.items.length),
+        page: toNumber(res.page, 0),
+        size: toNumber(res.size, res.items.length)
+      };
+    }
+    return { items: [], total: 0, page: 0, size: 0 };
+  }
+
+  function getPostTitle(post) {
+    return (post && post.spec && post.spec.title)
+      || (post && post.metadata && post.metadata.name)
+      || '无标题';
+  }
+
+  function getPostVisits(post) {
+    return toNumber(post && post.stats && post.stats.visit, 0);
+  }
+
+  function getPostLink(post) {
+    return (post && post.status && post.status.permalink)
+      || ((post && post.spec && post.spec.slug) ? '/archives/' + encodeURIComponent(post.spec.slug) : '#');
+  }
+
+  function getPostPublishDate(post) {
+    return toDate(
+      (post && post.spec && post.spec.publishTime)
+      || (post && post.metadata && post.metadata.creationTimestamp)
+    );
+  }
+
+  function getCategoryName(category) {
+    return (category && category.spec && category.spec.displayName)
+      || (category && category.metadata && category.metadata.name)
+      || '未命名分类';
+  }
+
+  function getCategoryPostCount(category) {
+    var voCount = toNumber(category && category.postCount, NaN);
+    if (Number.isFinite(voCount)) return voCount;
+    return toNumber(category && category.status && category.status.visiblePostCount, 0);
+  }
+
+  function getTagName(tag) {
+    return (tag && tag.spec && tag.spec.displayName)
+      || (tag && tag.metadata && tag.metadata.name)
+      || '未命名标签';
+  }
+
+  function getTagSlug(tag) {
+    return (tag && tag.spec && tag.spec.slug)
+      || (tag && tag.metadata && tag.metadata.name)
+      || '';
+  }
+
+  function getTagPostCount(tag) {
+    var voCount = toNumber(tag && tag.postCount, NaN);
+    if (Number.isFinite(voCount)) return voCount;
+    return toNumber(tag && tag.status && tag.status.visiblePostCount, 0);
+  }
+
+  function getTagLink(tag) {
+    return (tag && tag.status && tag.status.permalink)
+      || ('/tags/' + encodeURIComponent(getTagSlug(tag)));
+  }
+
+  function haloSiteGet(endpoint, params) {
+    return $.ajax({
+      url: CONFIG.haloApisBase + CONFIG.haloSiteApiGroup + endpoint,
+      method: 'GET',
+      data: params || {},
+      dataType: 'json',
+      timeout: 12000
+    });
+  }
+
+  function haloContentGet(endpoint, params) {
+    return $.ajax({
+      url: CONFIG.haloApisBase + CONFIG.haloContentApiGroup + endpoint,
+      method: 'GET',
+      data: params || {},
+      dataType: 'json',
+      timeout: 12000
+    });
+  }
+
+  function monitorGet(endpoint) {
+    return $.ajax({
+      url: CONFIG.monitorApiBase + endpoint,
+      method: 'GET',
+      dataType: 'json',
+      timeout: 10000
+    });
+  }
+
+  // ========== 图表实例 ==========
+  var charts = { postTrend: null, category: null, cpu: null, network: null };
+  var cpuHistory = { labels: [], data: [] };
+  var networkHistory = { labels: [], sent: [], recv: [] };
+
+  // ========== 博客统计 ==========
+  function loadBlogStats() {
+    $.when(
+      haloSiteGet('/stats/-'),
+      haloContentGet('/tags', { page: 1, size: 1 }),
+      haloContentGet('/posts', { page: 1, size: 1, sort: 'metadata.creationTimestamp,asc' })
+    ).done(function(siteResp, tagResp, oldestResp) {
+      var siteStats = siteResp[0] || {};
+      var tagList = parseListResult(tagResp[0]);
+      var oldestList = parseListResult(oldestResp[0]);
+
+      var establishDays = '--';
+      if (oldestList.items.length > 0) {
+        var firstDate = getPostPublishDate(oldestList.items[0]);
+        if (firstDate) {
+          establishDays = (daysBetween(firstDate, new Date()) + 1).toString();
+        }
+      }
+
+      var cards = [
+        { icon: '📝', value: toNumber(siteStats.post, 0), label: '文章总数' },
+        { icon: '💬', value: toNumber(siteStats.comment, 0), label: '评论总数' },
+        { icon: '👀', value: toNumber(siteStats.visit, 0).toLocaleString(), label: '总访问量' },
+        { icon: '📂', value: toNumber(siteStats.category, 0), label: '分类数' },
+        { icon: '🏷️', value: tagList.total, label: '标签数' },
+        { icon: '⏱️', value: establishDays, label: '运行天数' }
+      ];
+
+      var html = '';
+      cards.forEach(function(card) {
+        html += '<div class="stat-card">'
+          + '<div class="stat-icon">' + card.icon + '</div>'
+          + '<div class="stat-value">' + card.value + '</div>'
+          + '<div class="stat-label">' + card.label + '</div>'
+          + '</div>';
+      });
+      $('#blogStatCards').html(html);
+    }).fail(function() {
+      $('#blogStatCards').html('<div class="loading-placeholder">博客统计加载失败，请检查 Halo Public API 是否可访问</div>');
+    });
+  }
+
+  // ========== 最近 30 天发布趋势 ==========
+  function loadPostTrend() {
+    haloContentGet('/posts', {
+      page: 1,
+      size: CONFIG.postFetchSize,
+      sort: 'metadata.creationTimestamp,desc'
+    }).done(function(res) {
+      var posts = parseListResult(res).items;
+      var now = new Date();
+      var dayMap = {};
+
+      for (var i = 29; i >= 0; i--) {
+        var d = new Date(now);
+        d.setDate(d.getDate() - i);
+        dayMap[dateKeyLocal(d)] = 0;
+      }
+
+      posts.forEach(function(post) {
+        var d = getPostPublishDate(post);
+        if (!d) return;
+        var key = dateKeyLocal(d);
+        if (Object.prototype.hasOwnProperty.call(dayMap, key)) {
+          dayMap[key] += 1;
+        }
+      });
+
+      var labels = Object.keys(dayMap).map(function(d) { return d.slice(5); });
+      var data = Object.keys(dayMap).map(function(key) { return dayMap[key]; });
+
+      var ctx = document.getElementById('postTrendChart');
+      if (!ctx) return;
+
+      if (charts.postTrend) charts.postTrend.destroy();
+      charts.postTrend = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '发布数',
+            data: data,
+            borderColor: CONFIG.themeColor,
+            backgroundColor: CONFIG.themeColor + '20',
+            fill: true,
+            tension: 0.35,
+            pointRadius: 2,
+            pointHoverRadius: 5
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1 } },
+            x: { ticks: { maxTicksLimit: 10 } }
+          }
+        }
+      });
+    }).fail(function() {
+      $('#postTrendChart').closest('.chart-box').find('.chart-box-title').after('<div class="loading-placeholder">加载失败</div>');
+    });
+  }
+
+  // ========== 分类占比图 ==========
+  function loadCategoryChart() {
+    haloContentGet('/categories', {
+      page: 1,
+      size: CONFIG.categoryFetchSize,
+      sort: 'spec.priority,asc'
+    }).done(function(res) {
+      var categories = parseListResult(res).items;
+      var filtered = categories
+        .map(function(c) {
+          return { name: getCategoryName(c), count: getCategoryPostCount(c) };
+        })
+        .filter(function(c) { return c.count > 0; })
+        .sort(function(a, b) { return b.count - a.count; });
+
+      var labels = filtered.map(function(c) { return c.name; });
+      var data = filtered.map(function(c) { return c.count; });
+      var colors = ['#1890ff', '#52c41a', '#faad14', '#ff4d4f', '#13c2c2', '#eb2f96', '#2f54eb', '#fa8c16', '#a0d911', '#722ed1'];
+
+      var ctx = document.getElementById('categoryChart');
+      if (!ctx) return;
+
+      if (charts.category) charts.category.destroy();
+      charts.category = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: data,
+            backgroundColor: colors.slice(0, labels.length),
+            borderWidth: 2,
+            borderColor: '#fff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { boxWidth: 12, padding: 12 } }
+          }
+        }
+      });
+    }).fail(function() {
+      $('#categoryChart').closest('.chart-box').find('.chart-box-title').after('<div class="loading-placeholder">加载失败</div>');
+    });
+  }
+
+  // ========== 热门文章 Top 10 ==========
+  function loadHotPosts() {
+    haloContentGet('/posts', {
+      page: 1,
+      size: CONFIG.postFetchSize,
+      sort: 'metadata.creationTimestamp,desc'
+    }).done(function(res) {
+      var posts = parseListResult(res).items.slice();
+      posts.sort(function(a, b) { return getPostVisits(b) - getPostVisits(a); });
+      posts = posts.slice(0, 10);
+
+      var html = '';
+      posts.forEach(function(post, i) {
+        var title = getPostTitle(post);
+        var visits = getPostVisits(post);
+        var url = getPostLink(post);
+        html += '<li>'
+          + '<span class="rank">' + (i + 1) + '</span>'
+          + '<a class="post-title" href="' + url + '" title="' + title + '">' + title + '</a>'
+          + '<span class="post-visits">' + visits + ' 次</span>'
+          + '</li>';
+      });
+
+      $('#hotPostsList').html(html || '<li class="loading-placeholder">暂无数据</li>');
+    }).fail(function() {
+      $('#hotPostsList').html('<li class="loading-placeholder">加载失败</li>');
+    });
+  }
+
+  // ========== 标签云 ==========
+  function loadTagCloud() {
+    haloContentGet('/tags', {
+      page: 1,
+      size: CONFIG.tagFetchSize,
+      sort: 'metadata.creationTimestamp,desc'
+    }).done(function(res) {
+      var tags = parseListResult(res).items;
+      if (!Array.isArray(tags) || tags.length === 0) {
+        $('#tagCloud').html('<div class="loading-placeholder">暂无标签</div>');
+        return;
+      }
+
+      var maxCount = Math.max.apply(null, tags.map(getTagPostCount)) || 1;
+      var colors = ['#1890ff', '#52c41a', '#faad14', '#ff4d4f', '#13c2c2', '#eb2f96', '#2f54eb', '#fa8c16', '#a0d911', '#722ed1'];
+      var html = '';
+
+      tags.sort(function(a, b) { return getTagPostCount(b) - getTagPostCount(a); });
+      tags.forEach(function(tag, i) {
+        var count = getTagPostCount(tag);
+        var name = getTagName(tag);
+        var size = 12 + Math.round((count / maxCount) * 10);
+        var color = (tag && tag.spec && tag.spec.color) || colors[i % colors.length];
+        html += '<a class="tag-item" href="' + getTagLink(tag) + '"'
+          + ' style="font-size:' + size + 'px; background:' + color + '18; color:' + color + ';">'
+          + name + ' (' + count + ')'
+          + '</a>';
+      });
+
+      $('#tagCloud').html(html);
+    }).fail(function() {
+      $('#tagCloud').html('<div class="loading-placeholder">加载失败</div>');
+    });
+  }
+
+  // ========== 服务器监控 ==========
+  function loadMonitorData() {
+    monitorGet('/metrics').done(function(res) {
+      var current = res.current;
+      if (!current) {
+        $('#monitorCards').html('<div class="loading-placeholder">暂无监控数据</div>');
+        return;
+      }
+
+      $('#serverStatus').removeClass('offline').addClass('online');
+      $('#serverStatusText').text('在线');
+
+      var cpuPercent = toNumber(current.cpu_usage_percent, 0).toFixed(1);
+      var memPercent = toNumber(current.memory_usage_percent, 0).toFixed(1);
+      var diskPercent = toNumber(current.disk_usage_percent, 0).toFixed(1);
+
+      var html = ''
+        + '<div class="monitor-card">'
+          + '<div class="monitor-label">CPU 使用率</div>'
+          + '<div class="monitor-value" style="color:' + getValueColor(toNumber(current.cpu_usage_percent, 0)) + '">' + cpuPercent + '%</div>'
+          + '<div class="progress-bar"><div class="progress-fill ' + getProgressColor(toNumber(current.cpu_usage_percent, 0)) + '" style="width:' + cpuPercent + '%"></div></div>'
+        + '</div>'
+        + '<div class="monitor-card">'
+          + '<div class="monitor-label">内存使用率</div>'
+          + '<div class="monitor-value" style="color:' + getValueColor(toNumber(current.memory_usage_percent, 0)) + '">' + memPercent + '%</div>'
+          + '<div class="progress-bar"><div class="progress-fill ' + getProgressColor(toNumber(current.memory_usage_percent, 0)) + '" style="width:' + memPercent + '%"></div></div>'
+          + '<div style="font-size:12px;color:#999;margin-top:6px;">' + formatBytes(current.memory_used_bytes) + ' / ' + formatBytes(current.memory_total_bytes) + '</div>'
+        + '</div>'
+        + '<div class="monitor-card">'
+          + '<div class="monitor-label">磁盘使用率</div>'
+          + '<div class="monitor-value" style="color:' + getValueColor(toNumber(current.disk_usage_percent, 0)) + '">' + diskPercent + '%</div>'
+          + '<div class="progress-bar"><div class="progress-fill ' + getProgressColor(toNumber(current.disk_usage_percent, 0)) + '" style="width:' + diskPercent + '%"></div></div>'
+          + '<div style="font-size:12px;color:#999;margin-top:6px;">' + formatBytes(current.disk_used_bytes) + ' / ' + formatBytes(current.disk_total_bytes) + '</div>'
+        + '</div>'
+        + '<div class="monitor-card">'
+          + '<div class="monitor-label">系统负载 (1/5/15)</div>'
+          + '<div class="monitor-value" style="font-size:18px;color:' + getValueColor(toNumber(current.load_1, 0) * 25) + '">'
+            + toNumber(current.load_1, 0).toFixed(2) + ' / ' + toNumber(current.load_5, 0).toFixed(2) + ' / ' + toNumber(current.load_15, 0).toFixed(2)
+          + '</div>'
+        + '</div>'
+        + '<div class="monitor-card">'
+          + '<div class="monitor-label">网络 I/O</div>'
+          + '<div style="margin-bottom:4px;">↑ <strong>' + formatBytesPerSec(current.network_bytes_sent_per_sec) + '</strong></div>'
+          + '<div>↓ <strong>' + formatBytesPerSec(current.network_bytes_recv_per_sec) + '</strong></div>'
+        + '</div>'
+        + '<div class="monitor-card">'
+          + '<div class="monitor-label">进程数</div>'
+          + '<div class="monitor-value" style="color:#1890ff">' + toNumber(current.process_count, 0) + '</div>'
+        + '</div>';
+
+      $('#monitorCards').html(html);
+
+      var timeLabel = formatTime(current.timestamp);
+      cpuHistory.labels.push(timeLabel);
+      cpuHistory.data.push(toNumber(current.cpu_usage_percent, 0));
+      if (cpuHistory.labels.length > CONFIG.chartMaxPoints) {
+        cpuHistory.labels.shift();
+        cpuHistory.data.shift();
+      }
+      updateCpuChart();
+
+      networkHistory.labels.push(timeLabel);
+      networkHistory.sent.push(toNumber(current.network_bytes_sent_per_sec, 0) / 1024);
+      networkHistory.recv.push(toNumber(current.network_bytes_recv_per_sec, 0) / 1024);
+      if (networkHistory.labels.length > CONFIG.chartMaxPoints) {
+        networkHistory.labels.shift();
+        networkHistory.sent.shift();
+        networkHistory.recv.shift();
+      }
+      updateNetworkChart();
+
+      $('#lastUpdateTime').text(new Date().toLocaleTimeString());
+    }).fail(function() {
+      $('#serverStatus').removeClass('online').addClass('offline');
+      $('#serverStatusText').text('离线');
+      $('#monitorCards').html('<div class="loading-placeholder">服务器监控数据获取失败，请检查 server-monitor 与 Nginx 代理</div>');
+    });
+  }
+
+  function loadMonitorHistory() {
+    monitorGet('/metrics/history').done(function(res) {
+      var history = res.history || [];
+      history.forEach(function(snap) {
+        var timeLabel = formatTime(snap.timestamp);
+        cpuHistory.labels.push(timeLabel);
+        cpuHistory.data.push(toNumber(snap.cpu_usage_percent, 0));
+        networkHistory.labels.push(timeLabel);
+        networkHistory.sent.push(toNumber(snap.network_bytes_sent_per_sec, 0) / 1024);
+        networkHistory.recv.push(toNumber(snap.network_bytes_recv_per_sec, 0) / 1024);
+      });
+
+      if (cpuHistory.labels.length > CONFIG.chartMaxPoints) {
+        cpuHistory.labels = cpuHistory.labels.slice(-CONFIG.chartMaxPoints);
+        cpuHistory.data = cpuHistory.data.slice(-CONFIG.chartMaxPoints);
+        networkHistory.labels = networkHistory.labels.slice(-CONFIG.chartMaxPoints);
+        networkHistory.sent = networkHistory.sent.slice(-CONFIG.chartMaxPoints);
+        networkHistory.recv = networkHistory.recv.slice(-CONFIG.chartMaxPoints);
+      }
+
+      updateCpuChart();
+      updateNetworkChart();
+    });
+  }
+
+  function updateCpuChart() {
+    var ctx = document.getElementById('cpuChart');
+    if (!ctx) return;
+
+    if (charts.cpu) {
+      charts.cpu.data.labels = cpuHistory.labels;
+      charts.cpu.data.datasets[0].data = cpuHistory.data;
+      charts.cpu.update('none');
+      return;
+    }
+
+    charts.cpu = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: cpuHistory.labels,
+        datasets: [{
+          label: 'CPU %',
+          data: cpuHistory.data,
+          borderColor: '#ff4d4f',
+          backgroundColor: '#ff4d4f20',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, max: 100, ticks: { callback: function(v) { return v + '%'; } } },
+          x: { ticks: { maxTicksLimit: 8 } }
+        }
+      }
+    });
+  }
+
+  function updateNetworkChart() {
+    var ctx = document.getElementById('networkChart');
+    if (!ctx) return;
+
+    if (charts.network) {
+      charts.network.data.labels = networkHistory.labels;
+      charts.network.data.datasets[0].data = networkHistory.sent;
+      charts.network.data.datasets[1].data = networkHistory.recv;
+      charts.network.update('none');
+      return;
+    }
+
+    charts.network = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: networkHistory.labels,
+        datasets: [
+          {
+            label: '上行 (KB/s)',
+            data: networkHistory.sent,
+            borderColor: '#1890ff',
+            backgroundColor: '#1890ff20',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 1
+          },
+          {
+            label: '下行 (KB/s)',
+            data: networkHistory.recv,
+            borderColor: '#52c41a',
+            backgroundColor: '#52c41a20',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: { legend: { position: 'top', labels: { boxWidth: 12 } } },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: function(v) { return v + ' KB/s'; } } },
+          x: { ticks: { maxTicksLimit: 8 } }
+        }
+      }
+    });
+  }
+
+  // ========== 初始化 ==========
+  $(function() {
+    loadBlogStats();
+    loadPostTrend();
+    loadCategoryChart();
+    loadHotPosts();
+    loadTagCloud();
+
+    loadMonitorHistory();
+    setTimeout(function() { loadMonitorData(); }, 1200);
+    setInterval(loadMonitorData, CONFIG.monitorRefreshInterval);
+  });
+})();
+</script>

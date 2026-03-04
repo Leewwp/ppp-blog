@@ -369,11 +369,20 @@ See [AI_MODERATION_REPLY_GUIDE.md](AI_MODERATION_REPLY_GUIDE.md) for:
 - auto-reply AI generation and quota limits
 - rule management APIs
 
+## Dashboard Sync
+
+- Source of truth for the public dashboard page is `docs/dashboard-sheet-code.html`.
+- `plugins/plugin-stats-dashboard` now packages that file into the plugin jar during `processResources`.
+- GitHub Actions workflow `Deploy Halo Plugins` is triggered when either plugin code or:
+  - `docs/dashboard-sheet-code.html`
+  - `docs/dashboard-prompt.html`
+  changes.
+- Full-stack workflow `Deploy Full Stack` ignores those two dashboard docs to avoid duplicate deployments.
+
 ## Manual Setup Checklist
 
-See [MANUAL_CONFIGURATION_CHECKLIST.md](MANUAL_CONFIGURATION_CHECKLIST.md) for:
-- guest comment and registration setup in Halo
-- plugin runtime settings
-- Loki/Promtail/Grafana log stack
-- optional SkyWalking tracing profile
-- Grafana alerting (email/webhook) steps
+See [docs/dashboard-prompt.html](docs/dashboard-prompt.html) for dashboard setup details:
+- Nginx `/monitor-api/` reverse proxy
+- Halo Content API enablement and Access Key
+- Sheet page creation and template selection
+- CORS / API key / dark-mode compatibility notes
