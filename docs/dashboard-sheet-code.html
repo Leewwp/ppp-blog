@@ -138,7 +138,6 @@
 
 <div class="dashboard-wrapper">
   <h1 class="dashboard-title">数据看板</h1>
-  <p class="dashboard-subtitle">Halo Public API + Server Monitor（无需前端密钥）</p>
 
   <h2 class="dashboard-section-title">📊 博客统计</h2>
   <div class="stat-cards" id="blogStatCards">
@@ -204,6 +203,12 @@
 
     // Server Monitor API（通过 Nginx 反向代理）
     monitorApiBase: '/monitor-api/api/v1',
+    monitorApiCandidates: [
+      '/monitor-api/api/v1',
+      '/monitor-api/v1',
+      '/monitor-api',
+      '/api/v1'
+    ],
 
     monitorRefreshInterval: 30000,
     chartMaxPoints: 20,
@@ -368,12 +373,50 @@
   }
 
   function monitorGet(endpoint) {
-    return $.ajax({
-      url: CONFIG.monitorApiBase + endpoint,
-      method: 'GET',
-      dataType: 'json',
-      timeout: 10000
-    });
+    var candidates = [CONFIG.monitorApiBase].concat(
+      (CONFIG.monitorApiCandidates || []).filter(function(base) {
+        return base && base !== CONFIG.monitorApiBase;
+      })
+    );
+    var deferred = $.Deferred();
+
+    function tryFetch(index) {
+      if (index >= candidates.length) {
+        deferred.reject({
+          status: 0,
+          base: CONFIG.monitorApiBase
+        });
+        return;
+      }
+
+      var base = candidates[index];
+      $.ajax({
+        url: base + endpoint,
+        method: 'GET',
+        dataType: 'json',
+        timeout: 10000
+      }).done(function(res) {
+        CONFIG.monitorApiBase = base;
+        deferred.resolve(res);
+      }).fail(function(xhr, textStatus, errorThrown) {
+        var status = (xhr && xhr.status) ? xhr.status : 0;
+        var shouldTryNext = status === 0 || status === 404 || status >= 500;
+        if (shouldTryNext && index < candidates.length - 1) {
+          tryFetch(index + 1);
+          return;
+        }
+        deferred.reject({
+          xhr: xhr,
+          status: status,
+          textStatus: textStatus,
+          errorThrown: errorThrown,
+          base: base
+        });
+      });
+    }
+
+    tryFetch(0);
+    return deferred.promise();
   }
 
   // ========== 图表实例 ==========
@@ -669,10 +712,14 @@
       updateNetworkChart();
 
       $('#lastUpdateTime').text(new Date().toLocaleTimeString());
-    }).fail(function() {
+    }).fail(function(error) {
       $('#serverStatus').removeClass('online').addClass('offline');
       $('#serverStatusText').text('离线');
-      $('#monitorCards').html('<div class="loading-placeholder">服务器监控数据获取失败，请检查 server-monitor 与 Nginx 代理</div>');
+      var message = '服务器监控数据获取失败，请检查 server-monitor 与 Nginx 代理';
+      if (error && error.base) {
+        message += '（尝试地址: ' + error.base + '，状态码: ' + (error.status || 0) + '）';
+      }
+      $('#monitorCards').html('<div class="loading-placeholder">' + message + '</div>');
     });
   }
 
