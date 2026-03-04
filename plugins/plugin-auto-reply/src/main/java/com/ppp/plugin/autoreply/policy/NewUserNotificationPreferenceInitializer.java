@@ -37,7 +37,7 @@ public class NewUserNotificationPreferenceInitializer implements UserPostCreatin
     public Mono<Void> postCreating(User user) {
         String username = Optional.ofNullable(user)
             .map(User::getMetadata)
-            .map(Metadata::getName)
+            .map(metadata -> metadata.getName())
             .orElse(null);
         if (username == null || username.isBlank()) {
             return Mono.empty();
@@ -79,4 +79,3 @@ public class NewUserNotificationPreferenceInitializer implements UserPostCreatin
         return extensionClient.create(configMap).then();
     }
 }
-
