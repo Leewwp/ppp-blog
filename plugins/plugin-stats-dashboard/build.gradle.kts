@@ -1,3 +1,6 @@
+import org.gradle.api.GradleException
+import org.gradle.api.tasks.Copy
+
 plugins {
     java
     id("io.freefair.lombok") version "8.13"
@@ -52,4 +55,26 @@ tasks.withType<Test>().configureEach {
 
 halo {
     version = haloRuntimeVersion
+}
+
+val dashboardSheetSource = layout.projectDirectory.file("../../docs/dashboard-sheet-code.html")
+val generatedDashboardResourceDir = layout.buildDirectory.dir("generated-resources/main/dashboard")
+
+val syncDashboardSheetCode by tasks.registering(Copy::class) {
+    from(dashboardSheetSource)
+    into(generatedDashboardResourceDir)
+    doFirst {
+        if (!dashboardSheetSource.asFile.exists()) {
+            throw GradleException(
+                "Missing dashboard source file: ${dashboardSheetSource.asFile.absolutePath}"
+            )
+        }
+    }
+}
+
+tasks.processResources {
+    dependsOn(syncDashboardSheetCode)
+    from(generatedDashboardResourceDir) {
+        into("dashboard")
+    }
 }

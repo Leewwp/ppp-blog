@@ -1,0 +1,144 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>博客数据看板实现指南（Halo 2.x Public API 版）</title>
+<style>
+body { max-width: 980px; margin: 36px auto; padding: 0 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.72; color: #333; }
+h1 { border-bottom: 2px solid #1890ff; padding-bottom: 10px; margin-bottom: 18px; }
+h2 { margin-top: 34px; color: #1677ff; }
+h3 { margin-top: 20px; }
+pre { background: #f6f8fa; padding: 14px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
+code { background: #f2f2f2; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+th { background: #f7f9fc; }
+.note { border-left: 4px solid #1890ff; background: #e6f7ff; padding: 10px 14px; margin: 12px 0; }
+.warn { border-left: 4px solid #faad14; background: #fffbe6; padding: 10px 14px; margin: 12px 0; }
+</style>
+</head>
+<body>
+
+<h1>博客数据看板实现指南（Halo 2.x Public API 版）</h1>
+<p><em>适用于 Halo 2.x。该版本不再依赖旧的 Content API Access Key 开关，前端看板直接使用 Halo Public API。</em></p>
+
+<h2>一、项目目标</h2>
+<p>在 Halo 中创建公开访问的 <code>/dashboard</code> 页面，展示：</p>
+<ul>
+<li>博客统计（文章、评论、访问、分类、标签、运行天数）</li>
+<li>内容可视化（发布趋势、分类占比、热门文章、标签云）</li>
+<li>服务器监控（CPU、内存、磁盘、网络、实时曲线）</li>
+</ul>
+
+<h2>二、技术栈与约束</h2>
+<table>
+<tr><th>项目</th><th>说明</th></tr>
+<tr><td>博客引擎</td><td>Halo 2.x</td></tr>
+<tr><td>页面容器</td><td>Halo Sheet 页面 + <code>sheet_only_header_footer</code> 模板</td></tr>
+<tr><td>前端库</td><td>jQuery（主题已内置）</td></tr>
+<tr><td>图表库</td><td>Chart.js 4.x（CDN）</td></tr>
+<tr><td>布局</td><td>CSS Grid + Flexbox + 响应式 + 深色模式适配</td></tr>
+</table>
+
+<div class="note">
+<strong>关键原则：</strong>前端页面不放任何 PAT/密钥。<code>HALO_API_TOKEN</code> 仅用于 GitHub Actions 在服务器端调用 Halo Console API。
+</div>
+
+<h2>三、数据源接口</h2>
+
+<h3>3.1 Halo Public API（前端直接调用）</h3>
+<p>统一前缀：<code>/apis</code></p>
+<table>
+<tr><th>用途</th><th>接口</th><th>说明</th></tr>
+<tr><td>站点统计</td><td><code>GET /apis/api.halo.run/v1alpha1/stats/-</code></td><td>返回站点访问/评论/文章/分类等总量</td></tr>
+<tr><td>文章列表</td><td><code>GET /apis/api.content.halo.run/v1alpha1/posts</code></td><td>支持分页、排序；可提取趋势和热门文章</td></tr>
+<tr><td>分类列表</td><td><code>GET /apis/api.content.halo.run/v1alpha1/categories</code></td><td>用于分类占比图</td></tr>
+<tr><td>标签列表</td><td><code>GET /apis/api.content.halo.run/v1alpha1/tags</code></td><td>用于标签云与标签总数</td></tr>
+</table>
+
+<h3>3.2 Server Monitor API（自定义 Go 服务）</h3>
+<table>
+<tr><th>接口</th><th>说明</th></tr>
+<tr><td><code>GET /api/v1/metrics</code></td><td>当前指标 + 5 分钟内历史</td></tr>
+<tr><td><code>GET /api/v1/metrics/history</code></td><td>最近历史点位</td></tr>
+<tr><td><code>GET /api/v1/health</code></td><td>健康检查</td></tr>
+</table>
+
+<h2>四、Nginx 配置（必须）</h2>
+<p>在博客域名的 <code>server { ... }</code> 中加入：</p>
+<pre>location /monitor-api/ {
+    proxy_pass http://127.0.0.1:8093/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    add_header Access-Control-Allow-Origin * always;
+    add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+    add_header Access-Control-Allow-Headers "Content-Type, Authorization" always;
+
+    if ($request_method = 'OPTIONS') {
+        return 204;
+    }
+
+    limit_except GET OPTIONS { deny all; }
+}</pre>
+
+<p>应用配置：</p>
+<pre>nginx -t
+nginx -s reload</pre>
+
+<h2>五、看板源码位置</h2>
+<p>完整可粘贴源码位于：</p>
+<pre>docs/dashboard-sheet-code.html</pre>
+
+<div class="note">
+该源码已经改为 Halo 2.x Public API 调用方式，不需要填写 <code>haloApiKey</code>。
+</div>
+
+<h2>六、Halo 后台操作步骤</h2>
+<ol>
+<li>进入 Halo 后台 → 页面（SinglePage）→ 新建。</li>
+<li>标题：<code>数据看板</code>，别名：<code>dashboard</code>。</li>
+<li>模板选择：<code>sheet_only_header_footer</code>。</li>
+<li>切换到源码模式，粘贴 <code>docs/dashboard-sheet-code.html</code> 全部内容。</li>
+<li>发布页面，访问 <code>/dashboard</code> 验证。</li>
+</ol>
+
+<h2>七、GitHub Actions 与 PAT 说明</h2>
+
+<h3>7.1 HALO_API_TOKEN 的用途</h3>
+<p><code>HALO_API_TOKEN</code> 是 Halo Personal Access Token（PAT），仅用于工作流在服务器侧调用 Console API 进行插件安装/升级。</p>
+<p>示例（服务器侧）：</p>
+<pre>curl -X GET "${HALO_URL}/apis/api.console.halo.run/v1alpha1/plugins" \
+  -H "Authorization: Bearer ${HALO_API_TOKEN}"</pre>
+
+<h3>7.2 存放位置建议</h3>
+<ul>
+<li>推荐：GitHub Repository/Environment Secrets（当前做法正确）</li>
+<li>可选：服务器环境变量（仅服务器可读）</li>
+<li>禁止：写入前端页面源码、提交到仓库明文文件</li>
+</ul>
+
+<h2>八、安全建议</h2>
+<ol>
+<li>前端看板使用 Public API，不嵌入 PAT。</li>
+<li>若你未来关闭 Public API 或改为私有接口，可通过 Nginx 服务端注入 <code>Authorization</code> 头，不要在 JS 中放令牌。</li>
+<li><code>/monitor-api/</code> 建议限制方法为 GET/OPTIONS，并保留访问日志。</li>
+</ol>
+
+<h2>九、故障排查</h2>
+<table>
+<tr><th>现象</th><th>排查点</th></tr>
+<tr><td><code>/dashboard</code> 空白或图表不显示</td><td>浏览器控制台报错、Chart.js CDN 是否可达、页面是否使用源码模式发布</td></tr>
+<tr><td>监控卡片显示离线</td><td><code>server-monitor</code> 容器状态、<code>/monitor-api/</code> 代理与 8093 连通性</td></tr>
+<tr><td>博客统计加载失败</td><td>确认 <code>/apis/api.halo.run/v1alpha1/stats/-</code> 与 <code>/apis/api.content.halo.run/v1alpha1/posts</code> 可访问</td></tr>
+<tr><td>插件部署成功但页面没变</td><td>确认 workflow 触发的是 <code>Deploy Halo Plugins</code>，并查看 Halo 插件升级日志</td></tr>
+</table>
+
+<div class="warn">
+若你在 Halo 后台手工修改了同一页面内容，插件下次部署可能会覆盖（该页面属于插件托管页面）。
+</div>
+
+</body>
+</html>
