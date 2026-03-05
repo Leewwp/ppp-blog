@@ -162,6 +162,7 @@ public class CommentReplyListener implements Watcher {
         long delaySeconds = normalizeDelaySeconds(response.delaySeconds());
 
         return hasAutoReplyForComment(commentName)
+            .subscribeOn(Schedulers.boundedElastic())
             .flatMap(exists -> {
                 if (exists) {
                     log.info("auto-reply skipped for duplicate comment={}", commentName);
@@ -169,6 +170,7 @@ public class CommentReplyListener implements Watcher {
                 }
 
                 return Mono.delay(Duration.ofSeconds(delaySeconds))
+                    .publishOn(Schedulers.boundedElastic())
                     .flatMap(ignore -> hasAutoReplyForComment(commentName))
                     .flatMap(existsAfterDelay -> {
                         if (existsAfterDelay) {
@@ -176,7 +178,9 @@ public class CommentReplyListener implements Watcher {
                                 commentName);
                             return Mono.<Void>empty();
                         }
-                        return createReply(commentName, replyContent, settings).then();
+                        return createReply(commentName, replyContent, settings)
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .then();
                     })
                     .doOnSuccess(ignore -> log.info(
                         "auto-reply created, comment={}, delaySeconds={}, matchedRule={}",
@@ -246,6 +250,7 @@ public class CommentReplyListener implements Watcher {
                     return Mono.just(false);
                 }
                 return Mono.delay(MODERATION_CHECK_INTERVAL)
+                    .publishOn(Schedulers.boundedElastic())
                     .flatMap(ignore -> waitForCommentReviewReady(commentName, attempt + 1));
             })
             .onErrorResume(error -> {
