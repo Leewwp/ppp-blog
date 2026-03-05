@@ -104,14 +104,46 @@ jobs:
             build_plugin "plugin-stats-dashboard"
             build_plugin "plugin-auto-reply"
 
-            HALO_URL="${{ secrets.HALO_EXTERNAL_URL }}"
+            wait_halo_ready() {
+              local retries=24
+              while [ "$retries" -gt 0 ]; do
+                if docker ps --format '{{.Names}}' | grep -qx "halo"; then
+                  health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' halo 2>/dev/null || echo missing)"
+                  if [ "$health" = "healthy" ] || [ "$health" = "unknown" ]; then
+                    if curl -fsS --max-time 5 "http://127.0.0.1:8090/actuator/health/readiness" >/dev/null 2>&1; then
+                      return 0
+                    fi
+                  fi
+                  echo "Halo status=${health}, waiting..."
+                else
+                  echo "Halo container is not running, waiting..."
+                fi
+                retries=$((retries - 1))
+                sleep 5
+              done
+              return 1
+            }
+
+            if ! wait_halo_ready; then
+              echo "ERROR: halo is not ready on http://127.0.0.1:8090"
+              docker-compose ps halo || true
+              docker-compose logs --tail 200 halo || true
+              exit 1
+            fi
+
+            HALO_URL_RAW="${{ secrets.HALO_EXTERNAL_URL }}"
+            HALO_URL="http://127.0.0.1:8090"
+            if [ -n "${HALO_URL_RAW}" ]; then
+              if curl -fsS --max-time 5 "${HALO_URL_RAW}/actuator/health/readiness" >/dev/null 2>&1; then
+                HALO_URL="${HALO_URL_RAW}"
+              else
+                echo "WARN: HALO_EXTERNAL_URL is unreachable from server, fallback to ${HALO_URL}"
+              fi
+            fi
             TOKEN="${{ secrets.HALO_API_TOKEN }}"
             if [ -z "$TOKEN" ]; then
               echo "HALO_API_TOKEN is required for install/upgrade plugin API."
               exit 1
-            fi
-            if [ -z "$HALO_URL" ]; then
-              HALO_URL="http://127.0.0.1:8090"
             fi
 
             install_or_upgrade_plugin() {
