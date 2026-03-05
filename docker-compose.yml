@@ -11,7 +11,7 @@ services:
     networks:
       halo-network:
     ports:
-      - "127.0.0.1:8090:8090"
+      - "8090:8090"
     volumes:
       - ./halo-data:/root/.halo2
       - ./monitoring/skywalking/agent:/opt/skywalking/agent:ro
