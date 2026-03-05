@@ -8,10 +8,13 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
@@ -45,6 +48,7 @@ public class CommentReplyListener implements Watcher {
     private final ReplyServiceClient replyServiceClient;
     private final ReactiveExtensionClient extensionClient;
     private final AutoReplyProperties autoReplyProperties;
+    private final Set<String> processingComments = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private volatile boolean disposed = false;
     private Runnable disposeHook;
 
@@ -93,6 +97,11 @@ public class CommentReplyListener implements Watcher {
         String commentName = comment.getMetadata().getName();
         String content = safeContent(comment);
         String author = safeAuthor(comment);
+        if (!processingComments.add(commentName)) {
+            log.debug("auto-reply processing already in progress, skip duplicate trigger, comment={}",
+                commentName);
+            return;
+        }
 
         waitForCommentReviewReady(commentName)
             .flatMap(ready -> {
@@ -106,8 +115,10 @@ public class CommentReplyListener implements Watcher {
                         AutoReplyRequest request = new AutoReplyRequest(commentName, content, postTitle, author);
                         return replyServiceClient.generateReply(settings.replyServiceUrl(), request);
                     })
-                    .flatMap(response -> maybeCreateReply(commentName, settings, response));
+                    .flatMap(response -> Mono.defer(() -> maybeCreateReply(commentName, settings, response))
+                        .subscribeOn(Schedulers.boundedElastic()));
             })
+            .doFinally(signalType -> processingComments.remove(commentName))
             .doOnError(error -> log.error("auto-reply processing failed, comment={}, error={}",
                 commentName, error.toString(), error))
             .onErrorResume(error -> Mono.empty())
@@ -177,6 +188,7 @@ public class CommentReplyListener implements Watcher {
         String configuredReplyOwnerEmail = normalizeAuthorEmail(autoReplyProperties.current().replyAuthorEmail());
 
         return extensionClient.listAll(Reply.class, ListOptions.builder().build(), Sort.unsorted())
+            .subscribeOn(Schedulers.boundedElastic())
             .filter(reply -> reply != null && reply.getSpec() != null)
             .filter(reply -> commentName.equals(reply.getSpec().getCommentName()))
             .filter(reply -> isAutoReply(reply, configuredReplyOwnerEmail))
