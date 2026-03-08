@@ -14,7 +14,6 @@ services:
       - "8090:8090"
     volumes:
       - ./halo-data:/root/.halo2
-      - ./monitoring/skywalking/agent:/opt/skywalking/agent:ro
     environment:
       - SPRING_R2DBC_URL=r2dbc:pool:mysql://mysql:3306/halo
       - SPRING_R2DBC_USERNAME=halo
@@ -30,10 +29,8 @@ services:
       - MANAGEMENT_ENDPOINT_PROMETHEUS_ENABLED=true
       - MANAGEMENT_METRICS_EXPORT_PROMETHEUS_ENABLED=true
       - JVM_OPTS=${HALO_JVM_OPTS:--Xms256m -Xmx768m -XX:+UseG1GC -XX:MaxRAMPercentage=75.0}
-      - SW_AGENT_NAME=${SW_AGENT_NAME:-halo}
-      - SW_AGENT_COLLECTOR_BACKEND_SERVICES=${SW_AGENT_COLLECTOR_BACKEND_SERVICES:-skywalking-oap:11800}
       - TZ=Asia/Shanghai
-    mem_limit: 1200m
+    mem_limit: 1024m
     cpus: "1.50"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/actuator/health/readiness"]
@@ -64,7 +61,7 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --max_connections=1000
-    mem_limit: 768m
+    mem_limit: 512m
     cpus: "0.80"
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
@@ -83,7 +80,7 @@ services:
     volumes:
       - ./redis-data:/data
     command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
-    mem_limit: 256m
+    mem_limit: 192m
     cpus: "0.30"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
@@ -109,7 +106,7 @@ services:
       - MINIMAX_MODEL=${MINIMAX_MODEL:-MiniMax-M2.5}
       - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
       - TZ=Asia/Shanghai
-    mem_limit: 192m
+    mem_limit: 128m
     cpus: "0.30"
 
   auto-reply:
@@ -134,7 +131,7 @@ services:
       - MINIMAX_MODEL=${MINIMAX_MODEL:-MiniMax-M2.5}
       - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
       - TZ=Asia/Shanghai
-    mem_limit: 256m
+    mem_limit: 192m
     cpus: "0.40"
 
   server-monitor:
@@ -152,7 +149,7 @@ services:
       - PORT=8093
       - WEBHOOK_URL=${WEBHOOK_URL:-}
       - TZ=Asia/Shanghai
-    mem_limit: 192m
+    mem_limit: 96m
     cpus: "0.30"
 
   prometheus:
@@ -170,7 +167,7 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus:/etc/prometheus:ro
-    mem_limit: 256m
+    mem_limit: 192m
     cpus: "0.30"
 
   grafana:
@@ -194,7 +191,7 @@ services:
       - GF_SMTP_FROM_ADDRESS=${GF_SMTP_FROM_ADDRESS:-}
       - GF_SMTP_FROM_NAME=${GF_SMTP_FROM_NAME:-PPP-Blog Alert}
       - TZ=Asia/Shanghai
-    mem_limit: 256m
+    mem_limit: 192m
     cpus: "0.30"
 
   loki:
@@ -210,7 +207,7 @@ services:
       - ./monitoring/loki/data:/loki
     command:
       - -config.file=/etc/loki/local-config.yaml
-    mem_limit: 384m
+    mem_limit: 256m
     cpus: "0.40"
 
   promtail:
@@ -227,47 +224,72 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     command:
       - -config.file=/etc/promtail/config.yml
-    mem_limit: 128m
+    mem_limit: 96m
     cpus: "0.20"
 
-  skywalking-oap:
-    image: apache/skywalking-oap-server:9.7.0
-    container_name: skywalking-oap
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: kafka
     restart: on-failure:3
-    profiles:
-      - tracing
     networks:
       halo-network:
     ports:
-      - "11800:11800"
-      - "12800:12800"
+      - "127.0.0.1:9092:9092"
     environment:
-      - SW_CLUSTER=standalone
-      - SW_STORAGE=h2
-      - SW_CORE_RECORD_DATA_TTL=2
-      - SW_CORE_METRICS_DATA_TTL=2
-      - SW_JAVA_OPTS=-Xms128m -Xmx384m -XX:+UseG1GC
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_LOG_RETENTION_HOURS=72
+      - KAFKA_LOG_SEGMENT_BYTES=104857600
+      - KAFKA_HEAP_OPTS=-Xms256m -Xmx512m
+      - CLUSTER_ID=ppp-blog-kafka-cluster-001
       - TZ=Asia/Shanghai
-    mem_limit: 700m
+    mem_limit: 640m
     cpus: "0.60"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
 
-  skywalking-ui:
-    image: apache/skywalking-ui:9.7.0
-    container_name: skywalking-ui
+  comment-service:
+    image: ghcr.io/${IMAGE_PREFIX:-ppp-blog}/comment-service:latest
+    container_name: comment-service
     restart: on-failure:3
-    profiles:
-      - tracing
     depends_on:
-      - skywalking-oap
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     networks:
       halo-network:
     ports:
-      - "8081:8080"
+      - "8094:8094"
     environment:
-      - SW_OAP_ADDRESS=http://skywalking-oap:12800
+      - PORT=8094
+      - MYSQL_DSN=halo:${MYSQL_PASSWORD}@tcp(mysql:3306)/halo?parseTime=true&loc=Asia%2FShanghai&charset=utf8mb4
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_TOPIC_COMMENT=comment-events
+      - KAFKA_CONSUMER_GROUP=comment-service-group
+      - SHARD_COUNT=8
       - TZ=Asia/Shanghai
-    mem_limit: 192m
-    cpus: "0.30"
+    mem_limit: 256m
+    cpus: "0.50"
+
+volumes:
+  kafka-data:
 
 networks:
   halo-network:
