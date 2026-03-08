@@ -28,7 +28,7 @@ services:
       - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,globalinfo,prometheus
       - MANAGEMENT_ENDPOINT_PROMETHEUS_ENABLED=true
       - MANAGEMENT_METRICS_EXPORT_PROMETHEUS_ENABLED=true
-      - JVM_OPTS=${HALO_JVM_OPTS:--Xms256m -Xmx768m -XX:+UseG1GC -XX:MaxRAMPercentage=75.0}
+      - JVM_OPTS=-Xms256m -Xmx768m -XX:+UseG1GC -XX:MaxRAMPercentage=75.0
       - TZ=Asia/Shanghai
     mem_limit: 1024m
     cpus: "1.50"
