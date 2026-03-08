@@ -19,3 +19,10 @@ services:
       dockerfile: Dockerfile
     image: ppp-blog/server-monitor:local
     pull_policy: never
+
+  comment-service:
+    build:
+      context: ./services/comment-service
+      dockerfile: Dockerfile
+    image: ppp-blog/comment-service:local
+    pull_policy: never
