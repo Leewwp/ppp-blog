@@ -25,7 +25,7 @@ services:
       - SPRING_DATA_REDIS_DATABASE=0
       - SERVER_PORT=8090
       - HALO_EXTERNAL_URL=${HALO_EXTERNAL_URL:-http://localhost:8090}
-      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,globalinfo,prometheus
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,globalinfo,prometheus,restart
       - MANAGEMENT_ENDPOINT_PROMETHEUS_ENABLED=true
       - MANAGEMENT_METRICS_EXPORT_PROMETHEUS_ENABLED=true
       - JVM_OPTS=-Xms256m -Xmx768m -XX:+UseG1GC -XX:MaxRAMPercentage=75.0
