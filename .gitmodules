@@ -1,3 +1,6 @@
 [submodule "halo"]
 	path = halo
 	url = https://github.com/halo-dev/halo.git
+[submodule "halo-theme-joe2.0"]
+	path = halo-theme-joe2.0
+	url = https://github.com/qinhua/halo-theme-joe2.0.git
