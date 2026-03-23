@@ -19,8 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: halo
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -36,10 +34,12 @@ jobs:
             halo/**/gradle/wrapper/gradle-wrapper.properties
 
       - name: Run API unit tests
-        run: cd halo && ./gradlew :api:test --no-daemon
+        run: ./gradlew :api:test --no-daemon
+        working-directory: halo
 
       - name: Run Application unit tests
-        run: cd halo && ./gradlew :application:test --no-daemon
+        run: ./gradlew :application:test --no-daemon
+        working-directory: halo
 
       - name: Upload unit test results
         uses: actions/upload-artifact@v4
@@ -58,8 +58,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: halo
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -71,7 +69,8 @@ jobs:
         uses: gradle/gradle-build-action@v3
 
       - name: Run Integration Tests
-        run: cd halo && ./gradlew :application:test --tests '*IntegrationTest' --no-daemon
+        run: ./gradlew :application:test --tests '*IntegrationTest' --no-daemon
+        working-directory: halo
 
       - name: Upload integration test results
         uses: actions/upload-artifact@v4
@@ -90,8 +89,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: halo
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -100,10 +97,12 @@ jobs:
           distribution: 'temurin'
 
       - name: Build Halo
-        run: cd halo && ./gradlew :application:bootJar --no-daemon
+        run: ./gradlew :application:bootJar --no-daemon
+        working-directory: halo
 
       - name: Start Halo
-        run: cd halo && ./gradlew :application:bootRun &
+        run: ./gradlew :application:bootRun &
+        working-directory: halo
         shell: bash
 
       - name: Wait for Halo to be ready
@@ -123,9 +122,8 @@ jobs:
 
       - name: Validate APIs
         run: |
-          cd validation
-          chmod +x scripts/validate-apis.sh
-          ./scripts/validate-apis.sh all
+          chmod +x validation/scripts/validate-apis.sh
+          ./validation/scripts/validate-apis.sh all
 
       - name: Upload API validation results
         uses: actions/upload-artifact@v4
@@ -142,8 +140,6 @@ jobs:
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: halo
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -160,10 +156,12 @@ jobs:
           sudo apt-get install k6
 
       - name: Build Halo
-        run: cd halo && ./gradlew :application:bootJar --no-daemon
+        run: ./gradlew :application:bootJar --no-daemon
+        working-directory: halo
 
       - name: Start Halo
-        run: cd halo && ./gradlew :application:bootRun &
+        run: ./gradlew :application:bootRun &
+        working-directory: halo
         shell: bash
 
       - name: Wait for Halo to be ready
@@ -183,13 +181,11 @@ jobs:
 
       - name: Run Load Tests
         run: |
-          cd validation
-          k6 run api-load.js --duration 120s --vus 50 --out json=../halo/build/test-results/load-test-results.json
+          k6 run validation/api-load.js --duration 120s --vus 50 --out json=halo/build/test-results/load-test-results.json
 
       - name: Run Stress Tests
         run: |
-          cd validation
-          k6 run stress-test.js --duration 180s --out json=../halo/build/test-results/stress-test-results.json
+          k6 run validation/stress-test.js --duration 180s --out json=halo/build/test-results/stress-test-results.json
 
       - name: Upload load test results
         uses: actions/upload-artifact@v4
@@ -205,8 +201,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: halo
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -222,7 +216,8 @@ jobs:
             halo/**/gradle/wrapper/gradle-wrapper.properties
 
       - name: Generate coverage report
-        run: cd halo && ./gradlew :application:jacocoTestReport --no-daemon
+        run: ./gradlew :application:jacocoTestReport --no-daemon
+        working-directory: halo
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
