@@ -154,12 +154,20 @@ jobs:
 
       - name: Initialize Halo
         run: |
-          status=$(curl -s -o /dev/null -w "%{http_code}" \
+          response=$(curl -s -w "\n%{http_code}" \
             -X POST "$HALO_URL/system/setup" \
             -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "siteTitle=Validation&username=admin&password=123456&email=validation@halo.run")
+            --data-urlencode "siteTitle=Validation" \
+            --data-urlencode "username=admin" \
+            --data-urlencode "password=123456" \
+            --data-urlencode "email=validation@halo.run" \
+            --data-urlencode "language=en" \
+            --data-urlencode "externalUrl=$HALO_URL")
+          status=$(echo "$response" | tail -1)
+          body=$(echo "$response" | sed '$d')
           if [ "$status" != "204" ] && [ "$status" != "409" ]; then
             echo "Halo setup failed with status $status"
+            echo "$body"
             exit 1
           fi
 
@@ -234,12 +242,20 @@ jobs:
 
       - name: Initialize Halo
         run: |
-          status=$(curl -s -o /dev/null -w "%{http_code}" \
+          response=$(curl -s -w "\n%{http_code}" \
             -X POST "$HALO_URL/system/setup" \
             -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "siteTitle=LoadTest&username=admin&password=123456&email=loadtest@halo.run")
+            --data-urlencode "siteTitle=LoadTest" \
+            --data-urlencode "username=admin" \
+            --data-urlencode "password=123456" \
+            --data-urlencode "email=loadtest@halo.run" \
+            --data-urlencode "language=en" \
+            --data-urlencode "externalUrl=$HALO_URL")
+          status=$(echo "$response" | tail -1)
+          body=$(echo "$response" | sed '$d')
           if [ "$status" != "204" ] && [ "$status" != "409" ]; then
             echo "Halo setup failed with status $status"
+            echo "$body"
             exit 1
           fi
 
