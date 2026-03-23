@@ -29,9 +29,11 @@ const latencyTrend = new Trend('latency');
 const throughputTrend = new Trend('throughput');
 
 // Configuration
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8090';
-const API_BASE = `${BASE_URL}/api`;
-const CONSOLE_API = `${BASE_URL}/api.console.halo.run/v1alpha1`;
+const BASE_URL = __ENV.HALO_URL || __ENV.BASE_URL || 'http://localhost:8090';
+const API_BASE = `${BASE_URL}/apis`;
+const PUBLIC_API = `${API_BASE}/api.content.halo.run/v1alpha1`;
+const CONSOLE_API = `${API_BASE}/api.console.halo.run/v1alpha1`;
+const BASIC_AUTH = __ENV.HALO_BASIC_AUTH || 'Basic YWRtaW46MTIzNDU2';
 
 // Test configuration
 export const options = {
@@ -81,38 +83,13 @@ const testPost = {
     }
 };
 
-let authToken = '';
 let createdPostName = '';
 
 // Setup - runs once before the test
 export function setup() {
     console.log('Setting up load test...');
 
-    // Login to get auth token
-    const loginRes = http.post(`${API_BASE}/auth/login`, JSON.stringify({
-        username: 'admin',
-        password: '123456'
-    }), {
-        headers: { 'Content-Type': 'application/json' }
-    });
-
-    if (loginRes.status === 200 || loginRes.status === 204) {
-        const body = JSON.parse(loginRes.body);
-        authToken = body.token || body.access_token || loginRes.headers['Authorization'] || '';
-    } else {
-        // Try form-based login
-        const formData = {
-            username: 'admin',
-            password: '123456'
-        };
-        const formRes = http.post(`${API_BASE}/auth/login`, formData, {
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-        });
-        authToken = formRes.headers['Authorization'] || '';
-    }
-
-    console.log(`Auth token obtained: ${authToken.substring(0, 20)}...`);
-    return { authToken };
+    return { authHeader: BASIC_AUTH };
 }
 
 // Teardown - runs once after the test
@@ -121,16 +98,13 @@ export function teardown(data) {
     // Delete test posts if any were created
     if (createdPostName) {
         http.del(`${CONSOLE_API}/posts/${createdPostName}`, null, {
-            headers: { 'Authorization': `Bearer ${data.authToken}` }
+            headers: { 'Authorization': data.authHeader }
         });
     }
 }
 
 // Default function - main test logic
 export default function(data) {
-    // Use the auth token from setup
-    authToken = data.authToken;
-
     // Define test scenarios
     const scenarios = [
         { name: 'Health Check', weight: 20, fn: healthCheck },
@@ -170,7 +144,7 @@ function healthCheck(data) {
 
 // Scenario: List Posts (Public API)
 function listPosts(data) {
-    const res = http.get(`${BASE_URL}/api/content.halo.run/v1alpha1/posts?page=0&size=10`);
+    const res = http.get(`${PUBLIC_API}/posts?page=0&size=10`);
 
     const success = check(res, {
         'list posts status is 200': (r) => r.status === 200,
@@ -192,7 +166,7 @@ function listPosts(data) {
 // Scenario: Get Single Post
 function getPost(data) {
     // First get the list to get a post name
-    const listRes = http.get(`${BASE_URL}/api/content.halo.run/v1alpha1/posts?page=0&size=1`);
+    const listRes = http.get(`${PUBLIC_API}/posts?page=0&size=1`);
 
     if (listRes.status !== 200) {
         errorRate.add(1);
@@ -202,8 +176,14 @@ function getPost(data) {
     try {
         const listBody = JSON.parse(listRes.body);
         if (listBody.items && listBody.items.length > 0) {
-            const postName = listBody.items[0].post.metadata.name;
-            const res = http.get(`${BASE_URL}/api/content.halo.run/v1alpha1/posts/${postName}`);
+            const firstPost = listBody.items[0];
+            const postName = firstPost?.post?.metadata?.name || firstPost?.metadata?.name;
+            if (!postName) {
+                errorRate.add(1);
+                return;
+            }
+
+            const res = http.get(`${PUBLIC_API}/posts/${postName}`);
 
             const success = check(res, {
                 'get post status is 200': (r) => r.status === 200,
@@ -219,12 +199,6 @@ function getPost(data) {
 
 // Scenario: Create Post (requires auth)
 function createPost(data) {
-    if (!authToken) {
-        console.log('No auth token, skipping create post');
-        errorRate.add(1);
-        return;
-    }
-
     const testPostCopy = JSON.parse(JSON.stringify(testPost));
     testPostCopy.post.metadata.name = 'load-test-' + Date.now() + '-' + Math.random();
     testPostCopy.post.spec.slug = testPostCopy.post.spec.slug + '-' + Math.random();
@@ -232,7 +206,7 @@ function createPost(data) {
     const res = http.post(`${CONSOLE_API}/posts`, JSON.stringify(testPostCopy), {
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
+            'Authorization': data.authHeader
         }
     });
 
@@ -253,15 +227,9 @@ function createPost(data) {
 
 // Scenario: List Users (requires auth)
 function listUsers(data) {
-    if (!authToken) {
-        console.log('No auth token, skipping list users');
-        errorRate.add(1);
-        return;
-    }
-
     const res = http.get(`${CONSOLE_API}/users?page=0&size=10`, {
         headers: {
-            'Authorization': `Bearer ${authToken}`
+            'Authorization': data.authHeader
         }
     });
 
@@ -275,7 +243,11 @@ function listUsers(data) {
 
 // Scenario: Get Settings
 function getSettings(data) {
-    const res = http.get(`${BASE_URL}/api.console.halo.run/v1alpha1/settings`);
+    const res = http.get(`${CONSOLE_API}/stats`, {
+        headers: {
+            'Authorization': data.authHeader
+        }
+    });
 
     const success = check(res, {
         'get settings status is 200': (r) => r.status === 200,
@@ -299,7 +271,7 @@ function textSummary(data, options) {
 
     summary += indent + 'Requests:\n';
     summary += indent + `  Total: ${data.metrics.http_reqs?.values?.count || 0}\n`;
-    summary += indent + `  Failed: ${data.metrics.http_req_failed?.values?.passes || 0}\n`;
+    summary += indent + `  Failed: ${data.metrics.http_req_failed?.values?.fails || 0}\n`;
     summary += indent + `  Failure Rate: ${((data.metrics.http_req_failed?.values?.rate || 0) * 100).toFixed(2)}%\n\n`;
 
     summary += indent + 'Latency (ms):\n';

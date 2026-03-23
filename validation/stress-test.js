@@ -26,8 +26,11 @@ const failedRequests = new Counter('failed_requests');
 const systemStrain = new Gauge('system_strain');
 
 // Configuration
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8090';
-const API_BASE = `${BASE_URL}/api`;
+const BASE_URL = __ENV.HALO_URL || __ENV.BASE_URL || 'http://localhost:8090';
+const API_BASE = `${BASE_URL}/apis`;
+const PUBLIC_API = `${API_BASE}/api.content.halo.run/v1alpha1`;
+const CONSOLE_API = `${API_BASE}/api.console.halo.run/v1alpha1`;
+const BASIC_AUTH = __ENV.HALO_BASIC_AUTH || 'Basic YWRtaW46MTIzNDU2';
 
 // Stress test configuration - aggressive escalation
 export const options = {
@@ -52,30 +55,10 @@ export const options = {
     },
 };
 
-// Test data
-let authToken = '';
-let createdPostNames = [];
-
 // Setup
 export function setup() {
     console.log('Starting stress test...');
-
-    // Try to login
-    const loginRes = http.post(`${API_BASE}/auth/login`, JSON.stringify({
-        username: 'admin',
-        password: '123456'
-    }), {
-        headers: { 'Content-Type': 'application/json' }
-    });
-
-    if (loginRes.status === 200) {
-        try {
-            const body = JSON.parse(loginRes.body);
-            authToken = body.token || body.access_token || '';
-        } catch (e) {}
-    }
-
-    return { authToken };
+    return { authHeader: BASIC_AUTH };
 }
 
 // Teardown
@@ -87,8 +70,6 @@ export function teardown(data) {
 
 // Main test logic
 export default function(data) {
-    authToken = data.authToken;
-
     // Calculate current strain level based on VUs
     const vuCount = __VU;
     systemStrain.add(vuCount / 500);  // Normalize to 0-1 based on max 500 VUs
@@ -98,8 +79,8 @@ export default function(data) {
         { weight: 30, fn: () => readOnlyOperation('health') },
         { weight: 25, fn: () => readOnlyOperation('listPosts') },
         { weight: 20, fn: () => readOnlyOperation('getPost') },
-        { weight: 15, fn: () => readWriteOperation('createPost') },
-        { weight: 10, fn: () => authenticatedOperation('listUsers') },
+        { weight: 15, fn: () => readWriteOperation('createPost', data) },
+        { weight: 10, fn: () => authenticatedOperation('listUsers', data) },
     ];
 
     const rand = Math.random() * 100;
@@ -123,11 +104,30 @@ function readOnlyOperation(type) {
             res = http.get(`${BASE_URL}/actuator/health`);
             break;
         case 'listPosts':
-            res = http.get(`${BASE_URL}/api/content.halo.run/v1alpha1/posts?page=${Math.floor(Math.random() * 10)}&size=20`);
+            res = http.get(`${PUBLIC_API}/posts?page=${Math.floor(Math.random() * 10)}&size=20`);
             break;
         case 'getPost':
-            // Try to get a specific post
-            res = http.get(`${BASE_URL}/api/content.halo.run/v1alpha1/posts/stress-test-post`);
+            const listRes = http.get(`${PUBLIC_API}/posts?page=0&size=1`);
+            if (listRes.status !== 200) {
+                errors.add(1);
+                failedRequests.add(1);
+                return;
+            }
+            try {
+                const listBody = JSON.parse(listRes.body);
+                const firstPost = listBody.items?.[0];
+                const postName = firstPost?.post?.metadata?.name || firstPost?.metadata?.name;
+                if (!postName) {
+                    errors.add(1);
+                    failedRequests.add(1);
+                    return;
+                }
+                res = http.get(`${PUBLIC_API}/posts/${postName}`);
+            } catch (e) {
+                errors.add(1);
+                failedRequests.add(1);
+                return;
+            }
             break;
         default:
             res = http.get(`${BASE_URL}/actuator/health`);
@@ -137,11 +137,9 @@ function readOnlyOperation(type) {
 }
 
 // Read-write operations (more stressful)
-function readWriteOperation(type) {
+function readWriteOperation(type, data) {
     if (type === 'createPost') {
         const postName = `stress-${Date.now()}-${__VU}-${__ITER}`;
-        createdPostNames.push(postName);
-
         const testPost = {
             post: {
                 spec: {
@@ -171,12 +169,12 @@ function readWriteOperation(type) {
             }
         };
 
-        const res = http.post(`${BASE_URL}/api.console.halo.run/v1alpha1/posts`,
+        const res = http.post(`${CONSOLE_API}/posts`,
             JSON.stringify(testPost),
             {
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`
+                    'Authorization': data.authHeader
                 }
             }
         );
@@ -186,22 +184,17 @@ function readWriteOperation(type) {
 }
 
 // Authenticated operations
-function authenticatedOperation(type) {
-    if (!authToken) {
-        errors.add(1);
-        return;
-    }
-
+function authenticatedOperation(type, data) {
     let res;
     switch (type) {
         case 'listUsers':
-            res = http.get(`${BASE_URL}/api.console.halo.run/v1alpha1/users?page=0&size=10`, {
-                headers: { 'Authorization': `Bearer ${authToken}` }
+            res = http.get(`${CONSOLE_API}/users?page=0&size=10`, {
+                headers: { 'Authorization': data.authHeader }
             });
             break;
         default:
-            res = http.get(`${BASE_URL}/api.console.halo.run/v1alpha1/settings`, {
-                headers: { 'Authorization': `Bearer ${authToken}` }
+            res = http.get(`${CONSOLE_API}/stats`, {
+                headers: { 'Authorization': data.authHeader }
             });
     }
 
@@ -234,22 +227,23 @@ function handleResponse(res, operation) {
 
 // Custom summary
 export function handleSummary(data) {
-    const totalRequests = data.metrics.successful_requests?.values?.passes || 0;
-    const failedReqs = data.metrics.failed_requests?.values?.fails || 0;
-    const failureRate = (failedReqs / (totalRequests + failedReqs) * 100).toFixed(2);
+    const totalRequests = data.metrics.successful_requests?.values?.count || 0;
+    const failedReqs = data.metrics.failed_requests?.values?.count || 0;
 
     return {
-        'stdout': textSummary(data),
+        'stdout': textSummary(data, totalRequests, failedReqs),
         'stress-test-results.json': JSON.stringify(data),
     };
 }
 
-function textSummary(data) {
+function textSummary(data, totalRequests, failedReqs) {
+    const allRequests = totalRequests + failedReqs;
+    const failureRate = allRequests > 0 ? ((failedReqs / allRequests) * 100).toFixed(2) : '0.00';
     let summary = '\n=== Stress Test Summary ===\n\n';
 
     summary += `Total VUs Reached: ${data.metrics.system_strain?.values?.max || 0}\n`;
-    summary += `Successful Requests: ${data.metrics.successful_requests?.values?.passes || 0}\n`;
-    summary += `Failed Requests: ${data.metrics.failed_requests?.values?.fails || 0}\n`;
+    summary += `Successful Requests: ${totalRequests}\n`;
+    summary += `Failed Requests: ${failedReqs}\n`;
     summary += `Failure Rate: ${failureRate}%\n\n`;
 
     summary += 'Latency Breakdown:\n';

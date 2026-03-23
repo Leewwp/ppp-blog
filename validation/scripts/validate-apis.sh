@@ -20,6 +20,8 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 BASE_URL="${HALO_URL:-http://localhost:8090}"
+API_BASE="${HALO_API_BASE:-${BASE_URL}/apis}"
+BASIC_AUTH="${HALO_BASIC_AUTH:-Basic YWRtaW46MTIzNDU2}"
 RESULTS_DIR="${RESULTS_DIR:-./build/test-results}"
 mkdir -p "$RESULTS_DIR"
 
@@ -42,10 +44,10 @@ record_result() {
     echo "{\"test\":\"$test_name\",\"status\":\"$status\",\"message\":\"$message\",\"latency\":$latency,\"timestamp\":\"$(date -Iseconds)\"}" >> "$VALIDATION_RESULTS"
 
     if [ "$status" = "pass" ]; then
-        ((PASS_COUNT++))
+        PASS_COUNT=$((PASS_COUNT + 1))
         log_success "$test_name"
     else
-        ((FAIL_COUNT++))
+        FAIL_COUNT=$((FAIL_COUNT + 1))
         log_error "$test_name: $message"
     fi
 }
@@ -56,13 +58,13 @@ test_endpoint() {
     local url="$2"
     local method="${3:-GET}"
     local expected_status="${4:-200}"
-    local auth="${5:-}"
+    local auth_header="${5:-}"
 
     local start_time=$(date +%s%3N)
 
     local response
-    if [ -n "$auth" ]; then
-        response=$(curl -s -w "\n%{http_code}" -X "$method" "$url" -H "Authorization: Bearer $auth" 2>/dev/null)
+    if [ -n "$auth_header" ]; then
+        response=$(curl -s -w "\n%{http_code}" -X "$method" "$url" -H "Authorization: $auth_header" 2>/dev/null)
     else
         response=$(curl -s -w "\n%{http_code}" -X "$method" "$url" 2>/dev/null)
     fi
@@ -73,11 +75,12 @@ test_endpoint() {
 
     if [ "$http_code" = "$expected_status" ] || ( [ "$expected_status" = "200" ] && [[ "$http_code" =~ ^2 ]] ); then
         record_result "$name" "pass" "HTTP $http_code" "$latency"
-        return 0
     else
         record_result "$name" "fail" "Expected $expected_status, got $http_code" "$latency"
-        return 1
     fi
+
+    # Keep validating all endpoints and fail once at summary time.
+    return 0
 }
 
 # Health checks
@@ -93,40 +96,21 @@ validate_health() {
 validate_public_apis() {
     log_info "Validating public APIs..."
 
-    test_endpoint "List Posts (Public)" "$BASE_URL/api/content.halo.run/v1alpha1/posts?page=0&size=10" "GET" "200"
-    test_endpoint "List Categories" "$BASE_URL/api/content.halo.run/v1alpha1/categories?page=0&size=10" "GET" "200"
-    test_endpoint "List Tags" "$BASE_URL/api/content.halo.run/v1alpha1/tags?page=0&size=10" "GET" "200"
-    test_endpoint "List SinglePages" "$BASE_URL/api/content.halo.run/v1alpha1/singlepages?page=0&size=10" "GET" "200"
+    test_endpoint "List Posts (Public)" "$API_BASE/api.content.halo.run/v1alpha1/posts?page=0&size=10" "GET" "200"
+    test_endpoint "List Categories" "$API_BASE/api.content.halo.run/v1alpha1/categories?page=0&size=10" "GET" "200"
+    test_endpoint "List Tags" "$API_BASE/api.content.halo.run/v1alpha1/tags?page=0&size=10" "GET" "200"
+    test_endpoint "List SinglePages" "$API_BASE/api.content.halo.run/v1alpha1/singlepages?page=0&size=10" "GET" "200"
     test_endpoint "Public API Docs" "$BASE_URL/v3/api-docs/apis_public.api_v1alpha1" "GET" "200"
 }
 
 # Console APIs (require auth)
 validate_console_apis() {
-    log_info "Validating console APIs (requires authentication)..."
+    log_info "Validating console APIs (Basic authentication)..."
 
-    # First, try to get auth token
-    local auth_response=$(curl -s -X POST "$BASE_URL/api/auth/login" \
-        -H "Content-Type: application/json" \
-        -d '{"username":"admin","password":"123456"}' 2>/dev/null)
-
-    local token=""
-    if [ -n "$auth_response" ]; then
-        token=$(echo "$auth_response" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-        if [ -z "$token" ]; then
-            token=$(echo "$auth_response" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
-        fi
-    fi
-
-    if [ -z "$token" ]; then
-        log_warn "Could not obtain auth token, skipping console API tests"
-        log_warn "Please ensure Halo is running and admin user exists"
-        return
-    fi
-
-    test_endpoint "Console Posts" "$BASE_URL/api.console.halo.run/v1alpha1/posts?page=0&size=10" "GET" "200" "$token"
-    test_endpoint "Console Users" "$BASE_URL/api.console.halo.run/v1alpha1/users?page=0&size=10" "GET" "200" "$token"
-    test_endpoint "Console Plugins" "$BASE_URL/api.console.halo.run/v1alpha1/plugins?page=0&size=10" "GET" "200" "$token"
-    test_endpoint "Console Settings" "$BASE_URL/api.console.halo.run/v1alpha1/settings" "GET" "200" "$token"
+    test_endpoint "Console Posts" "$API_BASE/api.console.halo.run/v1alpha1/posts?page=0&size=10" "GET" "200" "$BASIC_AUTH"
+    test_endpoint "Console Users" "$API_BASE/api.console.halo.run/v1alpha1/users?page=0&size=10" "GET" "200" "$BASIC_AUTH"
+    test_endpoint "Console Plugins" "$API_BASE/api.console.halo.run/v1alpha1/plugins?page=0&size=10" "GET" "200" "$BASIC_AUTH"
+    test_endpoint "Console Stats" "$API_BASE/api.console.halo.run/v1alpha1/stats" "GET" "200" "$BASIC_AUTH"
     test_endpoint "Console API Docs" "$BASE_URL/v3/api-docs/apis_console.api_v1alpha1" "GET" "200"
 }
 
