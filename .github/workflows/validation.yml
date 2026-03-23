@@ -1,0 +1,233 @@
+name: Halo Validation Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  JAVA_VERSION: '21'
+  HALO_URL: http://localhost:8090
+
+jobs:
+  # ===========================================================================
+  # JOB 1: Unit Tests
+  # ===========================================================================
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: halo
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Gradle cache
+        uses: gradle/gradle-build-action@v3
+        with:
+          cache-dependency-path: |
+            halo/**/*.gradle
+            halo/**/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Run API unit tests
+        run: cd halo && ./gradlew :api:test --no-daemon
+
+      - name: Run Application unit tests
+        run: cd halo && ./gradlew :application:test --no-daemon
+
+      - name: Upload unit test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: |
+            halo/**/build/test-results/**/*.xml
+            halo/**/build/reports/tests/test/**/index.html
+
+  # ===========================================================================
+  # JOB 2: Integration Tests
+  # ===========================================================================
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: halo
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Gradle cache
+        uses: gradle/gradle-build-action@v3
+
+      - name: Run Integration Tests
+        run: cd halo && ./gradlew :application:test --tests '*IntegrationTest' --no-daemon
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: |
+            halo/**/build/test-results/**/*.xml
+            halo/**/build/reports/tests/**/index.html
+
+  # ===========================================================================
+  # JOB 3: API Validation
+  # ===========================================================================
+  api-validation:
+    name: API Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: halo
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Build Halo
+        run: cd halo && ./gradlew :application:bootJar --no-daemon
+
+      - name: Start Halo
+        run: cd halo && ./gradlew :application:bootRun &
+        shell: bash
+
+      - name: Wait for Halo to be ready
+        run: |
+          for i in {1..120}; do
+            if curl -sf http://localhost:8090/actuator/health > /dev/null 2>&1; then
+              echo "Halo is ready"
+              break
+            fi
+            if [ $i -eq 120 ]; then
+              echo "Halo failed to start"
+              exit 1
+            fi
+            echo "Waiting for Halo... ($i/120)"
+            sleep 3
+          done
+
+      - name: Validate APIs
+        run: |
+          cd validation
+          chmod +x scripts/validate-apis.sh
+          ./scripts/validate-apis.sh all
+
+      - name: Upload API validation results
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-validation-results
+          path: halo/build/test-results/api-validation-*.json
+
+  # ===========================================================================
+  # JOB 4: Load Tests (only on push to main)
+  # ===========================================================================
+  load-tests:
+    name: Load Tests (k6)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: halo
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Build Halo
+        run: cd halo && ./gradlew :application:bootJar --no-daemon
+
+      - name: Start Halo
+        run: cd halo && ./gradlew :application:bootRun &
+        shell: bash
+
+      - name: Wait for Halo to be ready
+        run: |
+          for i in {1..120}; do
+            if curl -sf http://localhost:8090/actuator/health > /dev/null 2>&1; then
+              echo "Halo is ready"
+              break
+            fi
+            if [ $i -eq 120 ]; then
+              echo "Halo failed to start"
+              exit 1
+            fi
+            echo "Waiting for Halo... ($i/120)"
+            sleep 3
+          done
+
+      - name: Run Load Tests
+        run: |
+          cd validation
+          k6 run api-load.js --duration 120s --vus 50 --out json=../halo/build/test-results/load-test-results.json
+
+      - name: Run Stress Tests
+        run: |
+          cd validation
+          k6 run stress-test.js --duration 180s --out json=../halo/build/test-results/stress-test-results.json
+
+      - name: Upload load test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-results
+          path: halo/build/test-results/*-test-results.json
+
+  # ===========================================================================
+  # JOB 5: Code Coverage
+  # ===========================================================================
+  coverage:
+    name: Code Coverage Report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: halo
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Gradle cache
+        uses: gradle/gradle-build-action@v3
+        with:
+          cache-dependency-path: |
+            halo/**/*.gradle
+            halo/**/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Generate coverage report
+        run: cd halo && ./gradlew :application:jacocoTestReport --no-daemon
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            halo/**/build/reports/jacoco/test/html/**/index.html
+            halo/**/build/reports/jacoco/test/html/**/coverage.xml
