@@ -9,6 +9,8 @@ on:
 env:
   JAVA_VERSION: '21'
   HALO_URL: http://localhost:8090
+  HALO_API_BASE: http://localhost:8090/apis
+  HALO_BASIC_AUTH: Basic YWRtaW46MTIzNDU2
 
 jobs:
   # ===========================================================================
@@ -150,6 +152,17 @@ jobs:
             sleep 3
           done
 
+      - name: Initialize Halo
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$HALO_URL/system/setup" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "siteTitle=Validation&username=admin&password=123456&email=validation@halo.run")
+          if [ "$status" != "204" ] && [ "$status" != "409" ]; then
+            echo "Halo setup failed with status $status"
+            exit 1
+          fi
+
       - name: Validate APIs
         run: |
           chmod +x validation/scripts/validate-apis.sh
@@ -218,6 +231,20 @@ jobs:
             echo "Waiting for Halo... ($i/120)"
             sleep 3
           done
+
+      - name: Initialize Halo
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$HALO_URL/system/setup" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "siteTitle=LoadTest&username=admin&password=123456&email=loadtest@halo.run")
+          if [ "$status" != "204" ] && [ "$status" != "409" ]; then
+            echo "Halo setup failed with status $status"
+            exit 1
+          fi
+
+      - name: Prepare load test output directory
+        run: mkdir -p halo/build/test-results
 
       - name: Run Load Tests
         run: |
