@@ -19,8 +19,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve Halo ref
+        id: halo-ref
+        shell: bash
+        run: echo "sha=$(git ls-tree HEAD halo | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+      - name: Check out Halo
+        uses: actions/checkout@v4
         with:
-          submodules: recursive
+          repository: halo-dev/halo
+          ref: ${{ steps.halo-ref.outputs.sha }}
+          path: halo
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -60,8 +68,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve Halo ref
+        id: halo-ref
+        shell: bash
+        run: echo "sha=$(git ls-tree HEAD halo | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+      - name: Check out Halo
+        uses: actions/checkout@v4
         with:
-          submodules: recursive
+          repository: halo-dev/halo
+          ref: ${{ steps.halo-ref.outputs.sha }}
+          path: halo
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -93,8 +109,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve Halo ref
+        id: halo-ref
+        shell: bash
+        run: echo "sha=$(git ls-tree HEAD halo | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+      - name: Check out Halo
+        uses: actions/checkout@v4
         with:
-          submodules: recursive
+          repository: halo-dev/halo
+          ref: ${{ steps.halo-ref.outputs.sha }}
+          path: halo
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -129,7 +153,7 @@ jobs:
       - name: Validate APIs
         run: |
           chmod +x validation/scripts/validate-apis.sh
-          ./validation/scripts/validate-apis.sh all
+          RESULTS_DIR=halo/build/test-results ./validation/scripts/validate-apis.sh all
 
       - name: Upload API validation results
         uses: actions/upload-artifact@v4
@@ -146,8 +170,16 @@ jobs:
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve Halo ref
+        id: halo-ref
+        shell: bash
+        run: echo "sha=$(git ls-tree HEAD halo | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+      - name: Check out Halo
+        uses: actions/checkout@v4
         with:
-          submodules: recursive
+          repository: halo-dev/halo
+          ref: ${{ steps.halo-ref.outputs.sha }}
+          path: halo
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -209,8 +241,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve Halo ref
+        id: halo-ref
+        shell: bash
+        run: echo "sha=$(git ls-tree HEAD halo | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+      - name: Check out Halo
+        uses: actions/checkout@v4
         with:
-          submodules: recursive
+          repository: halo-dev/halo
+          ref: ${{ steps.halo-ref.outputs.sha }}
+          path: halo
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -234,5 +274,4 @@ jobs:
         with:
           name: coverage-report
           path: |
-            halo/**/build/reports/jacoco/test/html/**/index.html
-            halo/**/build/reports/jacoco/test/html/**/coverage.xml
+            halo/**/build/reports/jacoco/test/*.xml
