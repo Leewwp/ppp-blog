@@ -22,6 +22,7 @@ NC='\033[0m'
 BASE_URL="${HALO_URL:-http://localhost:8090}"
 API_BASE="${HALO_API_BASE:-${BASE_URL}/apis}"
 BASIC_AUTH="${HALO_BASIC_AUTH:-Basic YWRtaW46MTIzNDU2}"
+ACCEPT_HEADER="${HALO_ACCEPT_HEADER:-Accept: application/json}"
 RESULTS_DIR="${RESULTS_DIR:-./build/test-results}"
 mkdir -p "$RESULTS_DIR"
 
@@ -64,9 +65,9 @@ test_endpoint() {
 
     local response
     if [ -n "$auth_header" ]; then
-        response=$(curl -s -w "\n%{http_code}" -X "$method" "$url" -H "Authorization: $auth_header" 2>/dev/null)
+        response=$(curl -s -w "\n%{http_code}" -X "$method" "$url" -H "$ACCEPT_HEADER" -H "Authorization: $auth_header" 2>/dev/null)
     else
-        response=$(curl -s -w "\n%{http_code}" -X "$method" "$url" 2>/dev/null)
+        response=$(curl -s -w "\n%{http_code}" -X "$method" "$url" -H "$ACCEPT_HEADER" 2>/dev/null)
     fi
 
     local latency=$(($(date +%s%3N) - start_time))
@@ -122,7 +123,7 @@ validate_openapi() {
     test_endpoint "OpenAPI Aggregated" "$BASE_URL/v3/api-docs/apis_aggregated.api_v1alpha1" "GET" "200"
 
     # Try to fetch and validate JSON structure
-    local spec=$(curl -s "$BASE_URL/v3/api-docs/apis_aggregated.api_v1alpha1" 2>/dev/null)
+    local spec=$(curl -s "$BASE_URL/v3/api-docs/apis_aggregated.api_v1alpha1" -H "$ACCEPT_HEADER" 2>/dev/null)
 
     if echo "$spec" | grep -q '"openapi"'; then
         record_result "OpenAPI Version Check" "pass" "Valid OpenAPI 3.x spec" "0"
