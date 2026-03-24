@@ -33,16 +33,28 @@ if ($validationWorkflow -match "<<EOF") {
     $errors += "Validation workflow must not use inline heredocs inside YAML run/script blocks because they can break YAML indentation."
 }
 
-if ($validationWorkflow -match "git clone /opt/halo-blog" -and $validationWorkflow -notmatch "safe\.directory /opt/halo-blog") {
-    $errors += "Validation workflow must mark /opt/halo-blog as a safe git directory before cloning from it."
+if ($validationWorkflow -match "git clone /opt/halo-blog") {
+    $errors += "Validation workflow must not clone from /opt/halo-blog because that path can lag behind the validated GitHub commit."
+}
+
+if ($validationWorkflow -match 'git reset --hard "\$VALIDATED_SHA"') {
+    $errors += "Validation workflow must not reset the server copy to VALIDATED_SHA when the server is not fetching directly from the GitHub repository."
+}
+
+if ($validationWorkflow -match "git remote prune origin" -or $validationWorkflow -match "git update-ref -d refs/remotes/origin/main") {
+    $errors += "Validation workflow must not delete remote refs while preparing the validation instance."
+}
+
+if ($validationWorkflow -notmatch "Prepare validation workspace bundle") {
+    $errors += "Validation workflow must bundle validation assets on the runner before syncing them to the server."
 }
 
 if ($validationWorkflow -notmatch 'mkdir -p artifacts/validation-server-results') {
     $errors += "Validation summary must create the artifact directory before searching for result files."
 }
 
-if ($validationWorkflow -notmatch 'Validation artifact archive not found; continuing with placeholder results') {
-    $errors += "Validation artifact extraction must tolerate missing archives and continue with placeholder results."
+if ($validationWorkflow -notmatch "actions/upload-artifact@v4" -or $validationWorkflow -notmatch "name: validation-server-results") {
+    $errors += "Validation workflow must upload validation-server-results artifacts directly from the runner."
 }
 
 if ($deployWorkflow -notmatch "workflow_run") {
@@ -55,6 +67,10 @@ if ($deployWorkflow -notmatch "Halo Validation Pipeline") {
 
 if ($deployWorkflow -notmatch "github\.event\.workflow_run\.conclusion == 'success'") {
     $errors += "Production deploy workflow must only run when validation completes successfully."
+}
+
+if ($deployWorkflow -match "git remote prune origin" -or $deployWorkflow -match "git update-ref -d refs/remotes/origin/main") {
+    $errors += "Production deploy workflow must not delete remote refs before fetching the validated commit."
 }
 
 if ($readme -notmatch "/opt/halo-validation" -and $autoDeployment -notmatch "/opt/halo-validation") {
