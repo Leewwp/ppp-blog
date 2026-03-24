@@ -19,6 +19,14 @@ if ($stressScript -match "http\.post\(`\$\{CONSOLE_API\}/posts") {
     $errors += "Stress test must avoid post-creation write traffic so results focus on server throughput instead of content mutation failures."
 }
 
+if ($loadScript -match "\?\.|\?\[|\?\?") {
+    $errors += "Load test must avoid optional chaining and nullish syntax because the pinned k6 runtime cannot parse it."
+}
+
+if ($stressScript -match "\?\.|\?\[|\?\?") {
+    $errors += "Stress test must avoid optional chaining and nullish syntax because the pinned k6 runtime cannot parse it."
+}
+
 if ($loadScript -notmatch "http_req_duration" -or $loadScript -notmatch "http_req_failed") {
     $errors += "Load test must keep explicit latency and failure-rate thresholds."
 }

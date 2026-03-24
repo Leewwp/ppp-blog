@@ -33,6 +33,31 @@ const CONSOLE_API = `${API_BASE}/api.console.halo.run/v1alpha1`;
 const BASIC_AUTH = __ENV.HALO_BASIC_AUTH || 'Basic YWRtaW46MTIzNDU2';
 const JSON_ACCEPT_HEADERS = { Accept: 'application/json' };
 
+function getPostName(postItem) {
+    if (!postItem) {
+        return '';
+    }
+
+    if (postItem.post && postItem.post.metadata && postItem.post.metadata.name) {
+        return postItem.post.metadata.name;
+    }
+
+    if (postItem.metadata && postItem.metadata.name) {
+        return postItem.metadata.name;
+    }
+
+    return '';
+}
+
+function getMetricValue(data, metricName, valueName) {
+    if (!data || !data.metrics || !data.metrics[metricName] || !data.metrics[metricName].values) {
+        return 0;
+    }
+
+    const value = data.metrics[metricName].values[valueName];
+    return value || 0;
+}
+
 // Stress test configuration - aggressive escalation
 export const options = {
     stages: [
@@ -127,8 +152,8 @@ function readOnlyOperation(type) {
             }
             try {
                 const listBody = JSON.parse(listRes.body);
-                const firstPost = listBody.items?.[0];
-                const postName = firstPost?.post?.metadata?.name || firstPost?.metadata?.name;
+                const firstPost = listBody.items && listBody.items.length > 0 ? listBody.items[0] : null;
+                const postName = getPostName(firstPost);
                 if (!postName) {
                     errors.add(1);
                     failedRequests.add(1);
@@ -203,8 +228,8 @@ function handleResponse(res, operation) {
 
 // Custom summary
 export function handleSummary(data) {
-    const totalRequests = data.metrics.successful_requests?.values?.count || 0;
-    const failedReqs = data.metrics.failed_requests?.values?.count || 0;
+    const totalRequests = getMetricValue(data, 'successful_requests', 'count');
+    const failedReqs = getMetricValue(data, 'failed_requests', 'count');
 
     return {
         'stdout': textSummary(data, totalRequests, failedReqs),
@@ -217,23 +242,23 @@ function textSummary(data, totalRequests, failedReqs) {
     const failureRate = allRequests > 0 ? ((failedReqs / allRequests) * 100).toFixed(2) : '0.00';
     let summary = '\n=== Stress Test Summary ===\n\n';
 
-    summary += `Total VUs Reached: ${data.metrics.system_strain?.values?.max || 0}\n`;
+    summary += `Total VUs Reached: ${getMetricValue(data, 'system_strain', 'max')}\n`;
     summary += `Successful Requests: ${totalRequests}\n`;
     summary += `Failed Requests: ${failedReqs}\n`;
     summary += `Failure Rate: ${failureRate}%\n\n`;
 
     summary += 'Latency Breakdown:\n';
-    summary += `  Avg: ${(data.metrics.http_req_duration?.values?.avg || 0).toFixed(2)}ms\n`;
-    summary += `  P50: ${(data.metrics.http_req_duration?.values?.med || 0).toFixed(2)}ms\n`;
-    summary += `  P95: ${(data.metrics.http_req_duration?.values?.['p(95)'] || 0).toFixed(2)}ms\n`;
-    summary += `  P99: ${(data.metrics.http_req_duration?.values?.['p(99)'] || 0).toFixed(2)}ms\n`;
-    summary += `  Max: ${(data.metrics.http_req_duration?.values?.max || 0).toFixed(2)}ms\n\n`;
+    summary += `  Avg: ${getMetricValue(data, 'http_req_duration', 'avg').toFixed(2)}ms\n`;
+    summary += `  P50: ${getMetricValue(data, 'http_req_duration', 'med').toFixed(2)}ms\n`;
+    summary += `  P95: ${getMetricValue(data, 'http_req_duration', 'p(95)').toFixed(2)}ms\n`;
+    summary += `  P99: ${getMetricValue(data, 'http_req_duration', 'p(99)').toFixed(2)}ms\n`;
+    summary += `  Max: ${getMetricValue(data, 'http_req_duration', 'max').toFixed(2)}ms\n\n`;
 
     summary += 'Recommendations:\n';
     if (failureRate > 10) {
         summary += '  - High failure rate detected. Review error logs.\n';
     }
-    if ((data.metrics.http_req_duration?.values?.['p(95)'] || 0) > 1000) {
+    if (getMetricValue(data, 'http_req_duration', 'p(95)') > 1000) {
         summary += '  - High latency at P95. Consider scaling or optimizing.\n';
     }
 
