@@ -208,6 +208,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p validation-artifacts/test-results
+          chmod 0777 validation-artifacts validation-artifacts/test-results
 
       - name: Run API validation
         id: api-validation
@@ -236,6 +237,7 @@ jobs:
         run: |
           set +e
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
             -v "$PWD/validation:/scripts:ro" \
             -v "$PWD/validation-artifacts/test-results:/results" \
             -e HALO_URL="$VALIDATION_BASE_URL" \
@@ -254,6 +256,7 @@ jobs:
         run: |
           set +e
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
             -v "$PWD/validation:/scripts:ro" \
             -v "$PWD/validation-artifacts/test-results:/results" \
             -e HALO_URL="$VALIDATION_BASE_URL" \
