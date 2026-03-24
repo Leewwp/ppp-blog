@@ -27,6 +27,18 @@ if ($stressScript -match "\?\.|\?\[|\?\?") {
     $errors += "Stress test must avoid optional chaining and nullish syntax because the pinned k6 runtime cannot parse it."
 }
 
+if ($loadScript -match "load-test-results\.json") {
+    $errors += "Load test handleSummary must not write a relative results file because GitHub Actions already exports the summary and JSON outputs via mounted /results paths."
+}
+
+if ($stressScript -match "stress-test-results\.json") {
+    $errors += "Stress test handleSummary must not write a relative results file because GitHub Actions already exports the summary and JSON outputs via mounted /results paths."
+}
+
+if ($loadScript -match "health check response time < 200ms") {
+    $errors += "Load test must not hard-code a 200ms health-check assertion because the remote GitHub runner to Guangzhou path adds network latency that should be evaluated by global thresholds instead."
+}
+
 if ($loadScript -notmatch "http_req_duration" -or $loadScript -notmatch "http_req_failed") {
     $errors += "Load test must keep explicit latency and failure-rate thresholds."
 }

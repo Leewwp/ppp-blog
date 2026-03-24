@@ -124,7 +124,6 @@ function healthCheck(data) {
 
     const success = check(res, {
         'health check status is 200': (r) => r.status === 200,
-        'health check response time < 200ms': (r) => r.timings.duration < 200,
     });
 
     errorRate.add(!success);
@@ -258,18 +257,20 @@ function getStats(data) {
 export function handleSummary(data) {
     return {
         'stdout': textSummary(data, { indent: ' ', enableColors: true }),
-        'load-test-results.json': JSON.stringify(data),
     };
 }
 
 function textSummary(data, options) {
     const indent = options.indent || '';
+    const totalRequests = getMetricValue(data, 'http_reqs', 'count');
+    const failureRate = getMetricValue(data, 'http_req_failed', 'rate');
+    const failedRequests = Math.round(totalRequests * failureRate);
     let summary = '\n' + indent + '=== Load Test Summary ===\n\n';
 
     summary += indent + 'Requests:\n';
-    summary += indent + `  Total: ${getMetricValue(data, 'http_reqs', 'count')}\n`;
-    summary += indent + `  Failed: ${getMetricValue(data, 'http_req_failed', 'fails')}\n`;
-    summary += indent + `  Failure Rate: ${(getMetricValue(data, 'http_req_failed', 'rate') * 100).toFixed(2)}%\n\n`;
+    summary += indent + `  Total: ${totalRequests}\n`;
+    summary += indent + `  Failed: ${failedRequests}\n`;
+    summary += indent + `  Failure Rate: ${(failureRate * 100).toFixed(2)}%\n\n`;
 
     summary += indent + 'Latency (ms):\n';
     summary += indent + `  Average: ${getMetricValue(data, 'http_req_duration', 'avg').toFixed(2)}\n`;
