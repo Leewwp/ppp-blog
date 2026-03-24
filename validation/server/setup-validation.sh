@@ -20,7 +20,18 @@ fi
 
 mkdir -p validation/build/test-results
 
-docker compose -f validation/server/docker-compose.validation.yml \
+compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    docker-compose "$@"
+  else
+    echo "Docker Compose is not installed."
+    exit 1
+  fi
+}
+
+compose -f validation/server/docker-compose.validation.yml \
   --env-file validation/server/.env.validation \
   up -d --remove-orphans
 

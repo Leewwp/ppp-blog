@@ -147,6 +147,18 @@ jobs:
           envs: VALIDATION_BASE_URL,VALIDATION_SERVER_PATH,VALIDATION_PORT,VALIDATION_MYSQL_ROOT_PASSWORD,VALIDATION_MYSQL_PASSWORD,VALIDATION_REDIS_PASSWORD
           script: |
             set -e
+
+            compose() {
+              if docker compose version >/dev/null 2>&1; then
+                docker compose "$@"
+              elif command -v docker-compose >/dev/null 2>&1; then
+                docker-compose "$@"
+              else
+                echo "Docker Compose is not installed on the validation server"
+                exit 1
+              fi
+            }
+
             mkdir -p "$VALIDATION_SERVER_PATH"
             archive_path=$(find /tmp -name 'validation-source.tgz' -print -quit 2>/dev/null || true)
             if [ -z "$archive_path" ]; then
@@ -167,8 +179,8 @@ jobs:
             } > "$VALIDATION_SERVER_PATH/validation/server/.env.validation"
 
             cd "$VALIDATION_SERVER_PATH"
-            docker compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation pull || true
-            docker compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation up -d --remove-orphans
+            compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation pull || true
+            compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation up -d --remove-orphans
 
       - name: Wait for validation instance readiness
         shell: bash
