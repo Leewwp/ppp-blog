@@ -3,20 +3,15 @@
 set -euo pipefail
 
 VALIDATION_PATH="${VALIDATION_PATH:-/opt/halo-validation}"
-SOURCE_PATH="${SOURCE_PATH:-/opt/halo-blog}"
-
-if [ ! -d "$SOURCE_PATH/.git" ]; then
-  echo "Source repository not found at $SOURCE_PATH"
-  exit 1
-fi
-
 mkdir -p "$VALIDATION_PATH"
 
-if [ ! -d "$VALIDATION_PATH/.git" ]; then
-  git clone "$SOURCE_PATH" "$VALIDATION_PATH"
-fi
-
 cd "$VALIDATION_PATH"
+
+if [ ! -f "validation/server/docker-compose.validation.yml" ]; then
+  echo "Validation stack files not found in $VALIDATION_PATH"
+  echo "Copy the repository files to $VALIDATION_PATH before running this script."
+  exit 1
+fi
 
 if [ ! -f "validation/server/.env.validation" ]; then
   cp validation/server/.env.validation.example validation/server/.env.validation

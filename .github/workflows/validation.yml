@@ -113,6 +113,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare validation workspace bundle
+        shell: bash
+        run: |
+          mkdir -p validation-artifacts
+          tar -czf validation-artifacts/validation-source.tgz validation mysql-init
+
+      - name: Upload validation workspace bundle
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: validation-artifacts/validation-source.tgz
+          target: /tmp
+          overwrite: true
+
       - name: Deploy validation instance via SSH
         uses: appleboy/ssh-action@v1.0.0
         env:
@@ -122,33 +139,19 @@ jobs:
           VALIDATION_MYSQL_ROOT_PASSWORD: ${{ secrets.VALIDATION_MYSQL_ROOT_PASSWORD }}
           VALIDATION_MYSQL_PASSWORD: ${{ secrets.VALIDATION_MYSQL_PASSWORD }}
           VALIDATION_REDIS_PASSWORD: ${{ secrets.VALIDATION_REDIS_PASSWORD }}
-          VALIDATION_RESULTS_DIR: ${{ env.VALIDATION_RESULTS_DIR }}
-          VALIDATED_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          envs: VALIDATION_BASE_URL,VALIDATION_SERVER_PATH,VALIDATION_PORT,VALIDATION_MYSQL_ROOT_PASSWORD,VALIDATION_MYSQL_PASSWORD,VALIDATION_REDIS_PASSWORD,VALIDATION_RESULTS_DIR,VALIDATED_SHA
+          envs: VALIDATION_BASE_URL,VALIDATION_SERVER_PATH,VALIDATION_PORT,VALIDATION_MYSQL_ROOT_PASSWORD,VALIDATION_MYSQL_PASSWORD,VALIDATION_REDIS_PASSWORD
           script: |
             set -e
-            git config --global --add safe.directory /opt/halo-blog || true
-            git config --global --add safe.directory /opt/halo-blog/.git || true
             mkdir -p "$VALIDATION_SERVER_PATH"
-            if [ ! -d "$VALIDATION_SERVER_PATH/.git" ]; then
-              git clone /opt/halo-blog "$VALIDATION_SERVER_PATH"
-            fi
+            tar -xzf /tmp/validation-source.tgz -C "$VALIDATION_SERVER_PATH"
+            rm -f /tmp/validation-source.tgz
+            mkdir -p "$VALIDATION_SERVER_PATH/validation/server"
 
-            cd "$VALIDATION_SERVER_PATH"
-            git config --global --add safe.directory "$VALIDATION_SERVER_PATH" || true
-            rm -f .git/index.lock .git/refs/remotes/origin/main.lock || true
-            git remote prune origin || true
-            git update-ref -d refs/remotes/origin/main || true
-            git fetch --prune origin
-            git checkout main
-            git reset --hard "$VALIDATED_SHA"
-
-            mkdir -p validation/server "$VALIDATION_RESULTS_DIR"
             {
               echo "MYSQL_ROOT_PASSWORD=$VALIDATION_MYSQL_ROOT_PASSWORD"
               echo "MYSQL_PASSWORD=$VALIDATION_MYSQL_PASSWORD"
@@ -156,8 +159,9 @@ jobs:
               echo "VALIDATION_PORT=$VALIDATION_PORT"
               echo "HALO_VALIDATION_EXTERNAL_URL=$VALIDATION_BASE_URL"
               echo "TZ=Asia/Shanghai"
-            } > validation/server/.env.validation
+            } > "$VALIDATION_SERVER_PATH/validation/server/.env.validation"
 
+            cd "$VALIDATION_SERVER_PATH"
             docker compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation pull || true
             docker compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation up -d --remove-orphans
 
@@ -195,124 +199,66 @@ jobs:
             exit 1
           fi
 
-      - name: Run remote API validation
-        uses: appleboy/ssh-action@v1.0.0
-        env:
-          HALO_BASIC_AUTH: ${{ env.HALO_BASIC_AUTH }}
-          VALIDATION_INTERNAL_URL: ${{ env.VALIDATION_INTERNAL_URL }}
-          VALIDATION_RESULTS_DIR: ${{ env.VALIDATION_RESULTS_DIR }}
-          VALIDATION_SERVER_PATH: ${{ env.VALIDATION_SERVER_PATH }}
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          envs: HALO_BASIC_AUTH,VALIDATION_INTERNAL_URL,VALIDATION_RESULTS_DIR,VALIDATION_SERVER_PATH
-          script: |
-            set -e
-            cd "$VALIDATION_SERVER_PATH"
-            RESULTS_LOG="$VALIDATION_RESULTS_DIR/api-validation.log"
-            RESULTS_DIR="$VALIDATION_RESULTS_DIR" \
-            HALO_URL="$VALIDATION_INTERNAL_URL" \
-            HALO_API_BASE="$VALIDATION_INTERNAL_URL/apis" \
-            HALO_BASIC_AUTH="$HALO_BASIC_AUTH" \
-            ./validation/scripts/validate-apis.sh all | tee "$RESULTS_LOG"
-
-            passed=$(awk '/\[INFO\] Passed:/ {print $NF}' "$RESULTS_LOG" | tail -1)
-            failed=$(awk '/\[INFO\] Failed:/ {print $NF}' "$RESULTS_LOG" | tail -1)
-
-            printf '{"passed":%s,"failed":%s}\n' "${passed:-0}" "${failed:-0}" > "$VALIDATION_RESULTS_DIR/api-validation-summary.json"
-
-      - name: Run remote load tests
-        uses: appleboy/ssh-action@v1.0.0
-        env:
-          HALO_BASIC_AUTH: ${{ env.HALO_BASIC_AUTH }}
-          VALIDATION_INTERNAL_URL: ${{ env.VALIDATION_INTERNAL_URL }}
-          VALIDATION_RESULTS_DIR: ${{ env.VALIDATION_RESULTS_DIR }}
-          VALIDATION_SERVER_PATH: ${{ env.VALIDATION_SERVER_PATH }}
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          envs: HALO_BASIC_AUTH,VALIDATION_INTERNAL_URL,VALIDATION_RESULTS_DIR,VALIDATION_SERVER_PATH
-          script: |
-            set -e
-            cd "$VALIDATION_SERVER_PATH"
-            docker run --rm --network host \
-              -v "$PWD/validation:/scripts:ro" \
-              -v "$VALIDATION_RESULTS_DIR:/results" \
-              -e HALO_URL="$VALIDATION_INTERNAL_URL" \
-              -e HALO_BASIC_AUTH="$HALO_BASIC_AUTH" \
-              grafana/k6:0.49.0 run /scripts/api-load.js \
-              --summary-export=/results/load-test-summary.json \
-              --out json=/results/load-test-events.json
-
-      - name: Run remote stress tests
-        uses: appleboy/ssh-action@v1.0.0
-        env:
-          HALO_BASIC_AUTH: ${{ env.HALO_BASIC_AUTH }}
-          VALIDATION_INTERNAL_URL: ${{ env.VALIDATION_INTERNAL_URL }}
-          VALIDATION_RESULTS_DIR: ${{ env.VALIDATION_RESULTS_DIR }}
-          VALIDATION_SERVER_PATH: ${{ env.VALIDATION_SERVER_PATH }}
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          envs: HALO_BASIC_AUTH,VALIDATION_INTERNAL_URL,VALIDATION_RESULTS_DIR,VALIDATION_SERVER_PATH
-          script: |
-            set -e
-            cd "$VALIDATION_SERVER_PATH"
-            docker run --rm --network host \
-              -v "$PWD/validation:/scripts:ro" \
-              -v "$VALIDATION_RESULTS_DIR:/results" \
-              -e HALO_URL="$VALIDATION_INTERNAL_URL" \
-              -e HALO_BASIC_AUTH="$HALO_BASIC_AUTH" \
-              grafana/k6:0.49.0 run /scripts/stress-test.js \
-              --summary-export=/results/stress-test-summary.json \
-              --out json=/results/stress-test-events.json
-
-      - name: Package remote validation artifacts
-        if: always()
-        uses: appleboy/ssh-action@v1.0.0
-        env:
-          VALIDATION_RESULTS_DIR: ${{ env.VALIDATION_RESULTS_DIR }}
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          envs: VALIDATION_RESULTS_DIR
-          script: |
-            set -e
-            mkdir -p "$VALIDATION_RESULTS_DIR"
-            tar -czf /tmp/validation-results.tgz -C "$VALIDATION_RESULTS_DIR" .
-
-      - name: Download validation artifacts
-        if: always()
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          source: /tmp/validation-results.tgz
-          target: validation-artifacts
-          overwrite: true
-
-      - name: Extract validation artifacts
-        if: always()
+      - name: Prepare local validation results directory
         shell: bash
         run: |
           mkdir -p validation-artifacts/test-results
-          archive_path=$(find validation-artifacts -name 'validation-results.tgz' -print -quit 2>/dev/null || true)
-          if [ -z "$archive_path" ]; then
-            echo "Validation artifact archive not found; continuing with placeholder results"
-            printf 'Validation artifacts were not collected.\n' > validation-artifacts/test-results/collection-status.txt
-            exit 0
-          fi
-          tar -xzf "$archive_path" -C validation-artifacts/test-results
+
+      - name: Run API validation
+        id: api-validation
+        continue-on-error: true
+        shell: bash
+        run: |
+          chmod +x validation/scripts/validate-apis.sh
+          set +e
+          RESULTS_DIR="$PWD/validation-artifacts/test-results" \
+          HALO_URL="$VALIDATION_BASE_URL" \
+          HALO_API_BASE="$VALIDATION_BASE_URL/apis" \
+          HALO_BASIC_AUTH="$HALO_BASIC_AUTH" \
+          ./validation/scripts/validate-apis.sh all | tee validation-artifacts/test-results/api-validation.log
+          validation_exit=${PIPESTATUS[0]}
+          set -e
+
+          passed=$(awk '/\[INFO\] Passed:/ {print $NF}' validation-artifacts/test-results/api-validation.log | tail -1)
+          failed=$(awk '/\[INFO\] Failed:/ {print $NF}' validation-artifacts/test-results/api-validation.log | tail -1)
+          printf '{"passed":%s,"failed":%s}\n' "${passed:-0}" "${failed:-0}" > validation-artifacts/test-results/api-validation-summary.json
+          exit "$validation_exit"
+
+      - name: Run load tests
+        id: load-tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          docker run --rm \
+            -v "$PWD/validation:/scripts:ro" \
+            -v "$PWD/validation-artifacts/test-results:/results" \
+            -e HALO_URL="$VALIDATION_BASE_URL" \
+            -e HALO_BASIC_AUTH="$HALO_BASIC_AUTH" \
+            grafana/k6:0.49.0 run /scripts/api-load.js \
+            --summary-export=/results/load-test-summary.json \
+            --out json=/results/load-test-events.json
+          load_exit=$?
+          set -e
+          exit "$load_exit"
+
+      - name: Run stress tests
+        id: stress-tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          docker run --rm \
+            -v "$PWD/validation:/scripts:ro" \
+            -v "$PWD/validation-artifacts/test-results:/results" \
+            -e HALO_URL="$VALIDATION_BASE_URL" \
+            -e HALO_BASIC_AUTH="$HALO_BASIC_AUTH" \
+            grafana/k6:0.49.0 run /scripts/stress-test.js \
+            --summary-export=/results/stress-test-summary.json \
+            --out json=/results/stress-test-events.json
+          stress_exit=$?
+          set -e
+          exit "$stress_exit"
 
       - name: Upload validation artifacts
         if: always()
@@ -321,6 +267,21 @@ jobs:
           name: validation-server-results
           path: validation-artifacts/test-results
           if-no-files-found: warn
+
+      - name: Fail if validation checks failed
+        if: always()
+        shell: bash
+        run: |
+          failed=0
+          for outcome in "${{ steps.api-validation.outcome }}" "${{ steps.load-tests.outcome }}" "${{ steps.stress-tests.outcome }}"; do
+            if [ "$outcome" != "success" ]; then
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "One or more validation checks failed."
+            exit 1
+          fi
 
   coverage:
     name: Code Coverage Report

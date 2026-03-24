@@ -40,9 +40,7 @@ jobs:
             cd /opt/halo-blog
 
             rm -f .git/index.lock .git/refs/remotes/origin/main.lock || true
-            git remote prune origin || true
-            git update-ref -d refs/remotes/origin/main || true
-            git fetch --prune origin
+            git fetch --prune origin main
             git checkout main
             git reset --hard "$DEPLOY_SHA"
 
