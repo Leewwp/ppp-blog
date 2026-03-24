@@ -36,6 +36,31 @@ const CONSOLE_API = `${API_BASE}/api.console.halo.run/v1alpha1`;
 const BASIC_AUTH = __ENV.HALO_BASIC_AUTH || 'Basic YWRtaW46MTIzNDU2';
 const JSON_ACCEPT_HEADERS = { Accept: 'application/json' };
 
+function getPostName(postItem) {
+    if (!postItem) {
+        return '';
+    }
+
+    if (postItem.post && postItem.post.metadata && postItem.post.metadata.name) {
+        return postItem.post.metadata.name;
+    }
+
+    if (postItem.metadata && postItem.metadata.name) {
+        return postItem.metadata.name;
+    }
+
+    return '';
+}
+
+function getMetricValue(data, metricName, valueName) {
+    if (!data || !data.metrics || !data.metrics[metricName] || !data.metrics[metricName].values) {
+        return 0;
+    }
+
+    const value = data.metrics[metricName].values[valueName];
+    return value || 0;
+}
+
 // Test configuration
 export const options = {
     stages: [
@@ -145,7 +170,7 @@ function getPost(data) {
         const listBody = JSON.parse(listRes.body);
         if (listBody.items && listBody.items.length > 0) {
             const firstPost = listBody.items[0];
-            const postName = firstPost?.post?.metadata?.name || firstPost?.metadata?.name;
+            const postName = getPostName(firstPost);
             if (!postName) {
                 errorRate.add(1);
                 return;
@@ -242,18 +267,18 @@ function textSummary(data, options) {
     let summary = '\n' + indent + '=== Load Test Summary ===\n\n';
 
     summary += indent + 'Requests:\n';
-    summary += indent + `  Total: ${data.metrics.http_reqs?.values?.count || 0}\n`;
-    summary += indent + `  Failed: ${data.metrics.http_req_failed?.values?.fails || 0}\n`;
-    summary += indent + `  Failure Rate: ${((data.metrics.http_req_failed?.values?.rate || 0) * 100).toFixed(2)}%\n\n`;
+    summary += indent + `  Total: ${getMetricValue(data, 'http_reqs', 'count')}\n`;
+    summary += indent + `  Failed: ${getMetricValue(data, 'http_req_failed', 'fails')}\n`;
+    summary += indent + `  Failure Rate: ${(getMetricValue(data, 'http_req_failed', 'rate') * 100).toFixed(2)}%\n\n`;
 
     summary += indent + 'Latency (ms):\n';
-    summary += indent + `  Average: ${(data.metrics.http_req_duration?.values?.avg || 0).toFixed(2)}\n`;
-    summary += indent + `  P95: ${(data.metrics.http_req_duration?.values?.['p(95)'] || 0).toFixed(2)}\n`;
-    summary += indent + `  P99: ${(data.metrics.http_req_duration?.values?.['p(99)'] || 0).toFixed(2)}\n`;
-    summary += indent + `  Max: ${(data.metrics.http_req_duration?.values?.max || 0).toFixed(2)}\n\n`;
+    summary += indent + `  Average: ${getMetricValue(data, 'http_req_duration', 'avg').toFixed(2)}\n`;
+    summary += indent + `  P95: ${getMetricValue(data, 'http_req_duration', 'p(95)').toFixed(2)}\n`;
+    summary += indent + `  P99: ${getMetricValue(data, 'http_req_duration', 'p(99)').toFixed(2)}\n`;
+    summary += indent + `  Max: ${getMetricValue(data, 'http_req_duration', 'max').toFixed(2)}\n\n`;
 
     summary += indent + 'Custom Metrics:\n';
-    summary += indent + `  Error Rate: ${((data.metrics.errors?.values?.rate || 0) * 100).toFixed(2)}%\n`;
+    summary += indent + `  Error Rate: ${(getMetricValue(data, 'errors', 'rate') * 100).toFixed(2)}%\n`;
 
     return summary;
 }
