@@ -269,19 +269,14 @@ jobs:
           if-no-files-found: warn
 
       - name: Fail if validation checks failed
-        if: always()
+        if: always() && (steps.api-validation.outcome == 'failure' || steps.load-tests.outcome == 'failure' || steps.stress-tests.outcome == 'failure')
         shell: bash
         run: |
-          failed=0
-          for outcome in "${{ steps.api-validation.outcome }}" "${{ steps.load-tests.outcome }}" "${{ steps.stress-tests.outcome }}"; do
-            if [ "$outcome" != "success" ]; then
-              failed=1
-            fi
-          done
-          if [ "$failed" -ne 0 ]; then
-            echo "One or more validation checks failed."
-            exit 1
-          fi
+          echo "One or more validation checks failed."
+          echo "API validation: ${{ steps.api-validation.outcome }}"
+          echo "Load tests: ${{ steps.load-tests.outcome }}"
+          echo "Stress tests: ${{ steps.stress-tests.outcome }}"
+          exit 1
 
   coverage:
     name: Code Coverage Report
