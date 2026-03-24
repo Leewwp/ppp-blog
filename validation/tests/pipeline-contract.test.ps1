@@ -3,11 +3,13 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $validationWorkflowPath = Join-Path $repoRoot ".github\workflows\validation.yml"
 $deployWorkflowPath = Join-Path $repoRoot ".github\workflows\deploy.yml"
+$setupValidationPath = Join-Path $repoRoot "validation\server\setup-validation.sh"
 $readmePath = Join-Path $repoRoot "README.md"
 $autoDeploymentPath = Join-Path $repoRoot "AUTO_DEPLOYMENT.md"
 
 $validationWorkflow = Get-Content -Raw $validationWorkflowPath
 $deployWorkflow = Get-Content -Raw $deployWorkflowPath
+$setupValidation = Get-Content -Raw $setupValidationPath
 $readme = Get-Content -Raw $readmePath
 $autoDeployment = Get-Content -Raw $autoDeploymentPath
 
@@ -49,6 +51,10 @@ if ($validationWorkflow -notmatch "Prepare validation workspace bundle") {
     $errors += "Validation workflow must bundle validation assets on the runner before syncing them to the server."
 }
 
+if ($validationWorkflow -notmatch "docker compose version" -or $validationWorkflow -notmatch "command -v docker-compose") {
+    $errors += "Validation workflow must support both docker compose and docker-compose on the server."
+}
+
 if ($validationWorkflow -match 'tar -xzf /tmp/validation-source\.tgz') {
     $errors += "Validation workflow must not hardcode /tmp/validation-source.tgz because scp-action can preserve parent directories on the server."
 }
@@ -87,6 +93,10 @@ if ($deployWorkflow -notmatch "github\.event\.workflow_run\.conclusion == 'succe
 
 if ($deployWorkflow -match "git remote prune origin" -or $deployWorkflow -match "git update-ref -d refs/remotes/origin/main") {
     $errors += "Production deploy workflow must not delete remote refs before fetching the validated commit."
+}
+
+if ($setupValidation -notmatch "docker compose version" -or $setupValidation -notmatch "command -v docker-compose") {
+    $errors += "Validation setup script must support both docker compose and docker-compose."
 }
 
 if ($readme -notmatch "/opt/halo-validation" -and $autoDeployment -notmatch "/opt/halo-validation") {
