@@ -33,6 +33,18 @@ if ($validationWorkflow -match "<<EOF") {
     $errors += "Validation workflow must not use inline heredocs inside YAML run/script blocks because they can break YAML indentation."
 }
 
+if ($validationWorkflow -match "git clone /opt/halo-blog" -and $validationWorkflow -notmatch "safe\.directory /opt/halo-blog") {
+    $errors += "Validation workflow must mark /opt/halo-blog as a safe git directory before cloning from it."
+}
+
+if ($validationWorkflow -notmatch 'mkdir -p artifacts/validation-server-results') {
+    $errors += "Validation summary must create the artifact directory before searching for result files."
+}
+
+if ($validationWorkflow -notmatch 'Validation artifact archive not found; continuing with placeholder results') {
+    $errors += "Validation artifact extraction must tolerate missing archives and continue with placeholder results."
+}
+
 if ($deployWorkflow -notmatch "workflow_run") {
     $errors += "Production deploy workflow must be triggered by workflow_run."
 }
