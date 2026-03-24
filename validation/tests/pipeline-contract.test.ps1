@@ -47,8 +47,16 @@ if ($validationWorkflow -match "git remote prune origin" -or $validationWorkflow
     $errors += "Validation workflow must not delete remote refs while preparing the validation instance."
 }
 
-if ($validationWorkflow -notmatch "Prepare validation workspace bundle") {
-    $errors += "Validation workflow must bundle validation assets on the runner before syncing them to the server."
+if ($validationWorkflow -match "appleboy/scp-action") {
+    $errors += "Validation workflow must not depend on scp-action for validation deployment because cross-border uploads are timing out."
+}
+
+if ($validationWorkflow -notmatch "VALIDATION_REPOSITORY") {
+    $errors += "Validation workflow must define the GitHub repository URL for the remote validation checkout."
+}
+
+if ($validationWorkflow -notmatch 'git remote set-url origin "\$VALIDATION_REPOSITORY"' -or $validationWorkflow -notmatch 'git fetch --depth=1 origin "\$VALIDATED_SHA"') {
+    $errors += "Validation workflow must fetch the validated commit directly from the GitHub repository on the server."
 }
 
 if ($validationWorkflow -notmatch 'POST "\$VALIDATION_BASE_URL/system/setup"' -or $validationWorkflow -notmatch 'Accept: application/json') {
@@ -63,12 +71,8 @@ if ($validationWorkflow -notmatch "docker compose version" -or $validationWorkfl
     $errors += "Validation workflow must support both docker compose and docker-compose on the server."
 }
 
-if ($validationWorkflow -match 'tar -xzf /tmp/validation-source\.tgz') {
-    $errors += "Validation workflow must not hardcode /tmp/validation-source.tgz because scp-action can preserve parent directories on the server."
-}
-
-if ($validationWorkflow -notmatch 'find /tmp -name ''validation-source\.tgz''') {
-    $errors += "Validation workflow must locate the uploaded validation bundle on the server before extracting it."
+if ($validationWorkflow -match 'find /tmp -name ''validation-source\.tgz''' -or $validationWorkflow -match 'tar -xzf "\$archive_path" -C "\$VALIDATION_SERVER_PATH"') {
+    $errors += "Validation workflow must not unpack an uploaded validation tarball on the server."
 }
 
 if ($validationWorkflow -match 'for outcome in "\$\{\{ steps\.api-validation\.outcome \}\}" "\$\{\{ steps\.load-tests\.outcome \}\}" "\$\{\{ steps\.stress-tests\.outcome \}\}"') {
