@@ -386,3 +386,25 @@ See [docs/dashboard-prompt.html](docs/dashboard-prompt.html) for dashboard setup
 - Halo Content API enablement and Access Key
 - Sheet page creation and template selection
 - CORS / API key / dark-mode compatibility notes
+
+## Validation Instance For CI/CD
+
+For interview demos and safe production gating, this repository now expects a dedicated validation instance on the Guangzhou server:
+
+- Server path: `/opt/halo-validation`
+- Halo port: `18090`
+- Compose file: `validation/server/docker-compose.validation.yml`
+- Setup script: `validation/server/setup-validation.sh`
+
+Required GitHub secrets for the validation stack:
+
+- `VALIDATION_MYSQL_ROOT_PASSWORD`
+- `VALIDATION_MYSQL_PASSWORD`
+- `VALIDATION_REDIS_PASSWORD`
+
+Required server-side preparation:
+
+1. Copy or clone this repository to `/opt/halo-validation`.
+2. Run `bash validation/server/setup-validation.sh`.
+3. Open firewall/security-group port `18090` so GitHub Actions can reach `http://<server-ip>:18090`.
+4. Keep `/opt/halo-blog` as the production path and `/opt/halo-validation` as the isolated test path.

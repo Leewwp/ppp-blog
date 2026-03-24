@@ -1,0 +1,79 @@
+services:
+  halo:
+    image: halohub/halo:2.22
+    container_name: halo-validation
+    restart: on-failure:3
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${VALIDATION_PORT:-18090}:8090"
+    volumes:
+      - ./validation-data/halo:/root/.halo2
+    environment:
+      - SPRING_R2DBC_URL=r2dbc:pool:mysql://mysql:3306/halo
+      - SPRING_R2DBC_USERNAME=halo
+      - SPRING_R2DBC_PASSWORD=${MYSQL_PASSWORD}
+      - SPRING_SQL_INIT_PLATFORM=mysql
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_DATA_REDIS_PASSWORD=${REDIS_PASSWORD}
+      - SPRING_DATA_REDIS_DATABASE=0
+      - SERVER_PORT=8090
+      - HALO_EXTERNAL_URL=${HALO_VALIDATION_EXTERNAL_URL}
+      - HALO_SECURITY_BASIC_AUTH_DISABLED=false
+      - SPRINGDOC_API_DOCS_ENABLED=true
+      - SPRINGDOC_API_DOCS_VERSION=OPENAPI_3_0
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info
+      - TZ=${TZ:-Asia/Shanghai}
+      - JVM_OPTS=-Xms256m -Xmx768m -XX:+UseG1GC -XX:MaxRAMPercentage=75.0
+    mem_limit: 1024m
+    cpus: "1.50"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/actuator/health/readiness"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  mysql:
+    image: mysql:8.0
+    container_name: halo-validation-mysql
+    restart: on-failure:3
+    volumes:
+      - ./validation-data/mysql:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d:ro
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=halo
+      - MYSQL_USER=halo
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - TZ=${TZ:-Asia/Shanghai}
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    mem_limit: 512m
+    cpus: "0.80"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: halo-validation-redis
+    restart: on-failure:3
+    volumes:
+      - ./validation-data/redis:/data
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    mem_limit: 192m
+    cpus: "0.30"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

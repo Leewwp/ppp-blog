@@ -781,6 +781,36 @@ on:
 如遇到问题，可以：
 1. 查看 [GitHub Actions日志](https://github.com/your-username/ppp-blog/actions)
 2. 查看 [服务器部署日志](/var/log/halo-deploy.log)
+
+## Validation-first Pipeline
+
+The deployment flow now assumes two isolated server paths on the Guangzhou host:
+
+- Production: `/opt/halo-blog`
+- Validation: `/opt/halo-validation`
+
+The validation instance runs Halo on port `18090`, executes API validation plus k6 load/stress tests, and writes a GitHub Actions Summary before production deployment is allowed to continue.
+
+### Required GitHub Secrets
+
+- `SERVER_HOST`
+- `SERVER_USER`
+- `SSH_PRIVATE_KEY`
+- `SSH_PORT`
+- `VALIDATION_MYSQL_ROOT_PASSWORD`
+- `VALIDATION_MYSQL_PASSWORD`
+- `VALIDATION_REDIS_PASSWORD`
+
+### Required Server Actions
+
+1. Create `/opt/halo-validation`.
+2. Run `bash validation/server/setup-validation.sh` inside that directory.
+3. Open firewall/security-group port `18090`.
+4. Verify the validation URL is reachable from GitHub Actions: `http://<server-ip>:18090/actuator/health/readiness`.
+
+### Production Gating
+
+`.github/workflows/deploy.yml` no longer deploys directly on every push. It now waits for the `Halo Validation Pipeline` workflow to complete successfully, then deploys the validated commit SHA to `/opt/halo-blog`.
 3. 访问 [Halo社区](https://bbs.halo.run)
 
 ---
