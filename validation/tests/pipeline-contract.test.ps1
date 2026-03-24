@@ -49,6 +49,14 @@ if ($validationWorkflow -notmatch "Prepare validation workspace bundle") {
     $errors += "Validation workflow must bundle validation assets on the runner before syncing them to the server."
 }
 
+if ($validationWorkflow -match 'tar -xzf /tmp/validation-source\.tgz') {
+    $errors += "Validation workflow must not hardcode /tmp/validation-source.tgz because scp-action can preserve parent directories on the server."
+}
+
+if ($validationWorkflow -notmatch 'find /tmp -name ''validation-source\.tgz''') {
+    $errors += "Validation workflow must locate the uploaded validation bundle on the server before extracting it."
+}
+
 if ($validationWorkflow -match 'for outcome in "\$\{\{ steps\.api-validation\.outcome \}\}" "\$\{\{ steps\.load-tests\.outcome \}\}" "\$\{\{ steps\.stress-tests\.outcome \}\}"') {
     $errors += "Validation failure gate must not treat skipped validation steps as failures."
 }

@@ -127,7 +127,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           source: validation-artifacts/validation-source.tgz
-          target: /tmp
+          target: /tmp/validation-upload
           overwrite: true
 
       - name: Deploy validation instance via SSH
@@ -148,8 +148,13 @@ jobs:
           script: |
             set -e
             mkdir -p "$VALIDATION_SERVER_PATH"
-            tar -xzf /tmp/validation-source.tgz -C "$VALIDATION_SERVER_PATH"
-            rm -f /tmp/validation-source.tgz
+            archive_path=$(find /tmp -name 'validation-source.tgz' -print -quit 2>/dev/null || true)
+            if [ -z "$archive_path" ]; then
+              echo "Uploaded validation bundle not found under /tmp"
+              exit 1
+            fi
+            tar -xzf "$archive_path" -C "$VALIDATION_SERVER_PATH"
+            rm -f "$archive_path"
             mkdir -p "$VALIDATION_SERVER_PATH/validation/server"
 
             {
