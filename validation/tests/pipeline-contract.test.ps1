@@ -51,12 +51,16 @@ if ($validationWorkflow -match "appleboy/scp-action") {
     $errors += "Validation workflow must not depend on scp-action for validation deployment because cross-border uploads are timing out."
 }
 
-if ($validationWorkflow -notmatch "VALIDATION_REPOSITORY") {
-    $errors += "Validation workflow must define the GitHub repository URL for the remote validation checkout."
+if ($validationWorkflow -match 'git clone "\$VALIDATION_REPOSITORY"' -or $validationWorkflow -match 'git fetch --depth=1 origin "\$VALIDATED_SHA"' -or $validationWorkflow -match 'git checkout --force "\$VALIDATED_SHA"') {
+    $errors += "Validation workflow must not depend on the server fetching the validated commit from GitHub during deployment."
 }
 
-if ($validationWorkflow -notmatch 'git remote set-url origin "\$VALIDATION_REPOSITORY"' -or $validationWorkflow -notmatch 'git fetch --depth=1 origin "\$VALIDATED_SHA"') {
-    $errors += "Validation workflow must fetch the validated commit directly from the GitHub repository on the server."
+if ($validationWorkflow -notmatch 'base64 -w0 validation/server/docker-compose\.validation\.yml' -or $validationWorkflow -notmatch 'base64 -w0 mysql-init/02-comment-tables\.sql') {
+    $errors += "Validation workflow must package the validation stack assets from the runner before opening the SSH session."
+}
+
+if ($validationWorkflow -notmatch 'decode_to_file "\$VALIDATION_DOCKER_COMPOSE_B64" "\$VALIDATION_SERVER_PATH/validation/server/docker-compose\.validation\.yml"' -or $validationWorkflow -notmatch 'decode_to_file "\$VALIDATION_MYSQL_INIT_B64" "\$VALIDATION_SERVER_PATH/mysql-init/02-comment-tables\.sql"') {
+    $errors += "Validation workflow must reconstruct the validation stack files on the server from the runner-provided payload."
 }
 
 if ($validationWorkflow -notmatch 'POST "\$VALIDATION_BASE_URL/system/setup"' -or $validationWorkflow -notmatch 'Accept: application/json') {
