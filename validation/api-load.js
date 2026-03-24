@@ -34,6 +34,7 @@ const API_BASE = `${BASE_URL}/apis`;
 const PUBLIC_API = `${API_BASE}/api.content.halo.run/v1alpha1`;
 const CONSOLE_API = `${API_BASE}/api.console.halo.run/v1alpha1`;
 const BASIC_AUTH = __ENV.HALO_BASIC_AUTH || 'Basic YWRtaW46MTIzNDU2';
+const JSON_ACCEPT_HEADERS = { Accept: 'application/json' };
 
 // Test configuration
 export const options = {
@@ -144,7 +145,9 @@ function healthCheck(data) {
 
 // Scenario: List Posts (Public API)
 function listPosts(data) {
-    const res = http.get(`${PUBLIC_API}/posts?page=0&size=10`);
+    const res = http.get(`${PUBLIC_API}/posts?page=0&size=10`, {
+        headers: JSON_ACCEPT_HEADERS,
+    });
 
     const success = check(res, {
         'list posts status is 200': (r) => r.status === 200,
@@ -166,7 +169,9 @@ function listPosts(data) {
 // Scenario: Get Single Post
 function getPost(data) {
     // First get the list to get a post name
-    const listRes = http.get(`${PUBLIC_API}/posts?page=0&size=1`);
+    const listRes = http.get(`${PUBLIC_API}/posts?page=0&size=1`, {
+        headers: JSON_ACCEPT_HEADERS,
+    });
 
     if (listRes.status !== 200) {
         errorRate.add(1);
@@ -183,7 +188,9 @@ function getPost(data) {
                 return;
             }
 
-            const res = http.get(`${PUBLIC_API}/posts/${postName}`);
+            const res = http.get(`${PUBLIC_API}/posts/${postName}`, {
+                headers: JSON_ACCEPT_HEADERS,
+            });
 
             const success = check(res, {
                 'get post status is 200': (r) => r.status === 200,
@@ -205,6 +212,7 @@ function createPost(data) {
 
     const res = http.post(`${CONSOLE_API}/posts`, JSON.stringify(testPostCopy), {
         headers: {
+            'Accept': 'application/json',
             'Content-Type': 'application/json',
             'Authorization': data.authHeader
         }
@@ -229,6 +237,7 @@ function createPost(data) {
 function listUsers(data) {
     const res = http.get(`${CONSOLE_API}/users?page=0&size=10`, {
         headers: {
+            'Accept': 'application/json',
             'Authorization': data.authHeader
         }
     });
@@ -245,6 +254,7 @@ function listUsers(data) {
 function getSettings(data) {
     const res = http.get(`${CONSOLE_API}/stats`, {
         headers: {
+            'Accept': 'application/json',
             'Authorization': data.authHeader
         }
     });

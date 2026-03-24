@@ -5,26 +5,29 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   JAVA_VERSION: '21'
-  HALO_URL: http://localhost:8090
-  HALO_API_BASE: http://localhost:8090/apis
   HALO_BASIC_AUTH: Basic YWRtaW46MTIzNDU2
+  VALIDATION_SERVER_PATH: /opt/halo-validation
+  VALIDATION_PORT: '18090'
+  VALIDATION_BASE_URL: http://${{ secrets.SERVER_HOST }}:18090
+  VALIDATION_INTERNAL_URL: http://127.0.0.1:18090
+  VALIDATION_RESULTS_DIR: /opt/halo-validation/validation/build/test-results
 
 jobs:
-  # ===========================================================================
-  # JOB 1: Unit Tests
-  # ===========================================================================
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Resolve Halo ref
         id: halo-ref
         shell: bash
         run: echo "sha=$(git ls-tree HEAD halo | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
       - name: Check out Halo
         uses: actions/checkout@v4
         with:
@@ -36,7 +39,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'temurin'
+          distribution: temurin
 
       - name: Gradle cache
         uses: gradle/gradle-build-action@v3
@@ -49,31 +52,30 @@ jobs:
         run: ./gradlew :api:test --no-daemon
         working-directory: halo
 
-      - name: Run Application unit tests
+      - name: Run application unit tests
         run: ./gradlew :application:test --no-daemon
         working-directory: halo
 
       - name: Upload unit test results
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: unit-test-results
           path: |
             halo/**/build/test-results/**/*.xml
             halo/**/build/reports/tests/test/**/index.html
 
-  # ===========================================================================
-  # JOB 2: Integration Tests
-  # ===========================================================================
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Resolve Halo ref
         id: halo-ref
         shell: bash
         run: echo "sha=$(git ls-tree HEAD halo | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
       - name: Check out Halo
         uses: actions/checkout@v4
         with:
@@ -85,88 +87,103 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'temurin'
+          distribution: temurin
 
       - name: Gradle cache
         uses: gradle/gradle-build-action@v3
 
-      - name: Run Integration Tests
+      - name: Run integration tests
         run: ./gradlew :application:test --tests '*IntegrationTest' --no-daemon
         working-directory: halo
 
       - name: Upload integration test results
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: integration-test-results
           path: |
             halo/**/build/test-results/**/*.xml
             halo/**/build/reports/tests/**/index.html
 
-  # ===========================================================================
-  # JOB 3: API Validation
-  # ===========================================================================
-  api-validation:
-    name: API Validation
+  validation-server-tests:
+    name: Validation Instance Tests
+    needs: [unit-tests, integration-tests]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve Halo ref
-        id: halo-ref
-        shell: bash
-        run: echo "sha=$(git ls-tree HEAD halo | awk '{print $3}')" >> "$GITHUB_OUTPUT"
-      - name: Check out Halo
-        uses: actions/checkout@v4
-        with:
-          repository: halo-dev/halo
-          ref: ${{ steps.halo-ref.outputs.sha }}
-          path: halo
 
-      - name: Set up JDK ${{ env.JAVA_VERSION }}
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'temurin'
-
-      - name: Build Halo
-        run: ./gradlew :application:bootJar --no-daemon
-        working-directory: halo
-
-      - name: Start Halo
+      - name: Deploy validation instance via SSH
+        uses: appleboy/ssh-action@v1.0.0
         env:
-          HALO_SECURITY_BASIC_AUTH_DISABLED: 'false'
-          SPRINGDOC_API_DOCS_ENABLED: 'true'
-          SPRINGDOC_API_DOCS_VERSION: OPENAPI_3_0
-        run: ./gradlew :application:bootRun &
-        working-directory: halo
-        shell: bash
+          VALIDATION_BASE_URL: ${{ env.VALIDATION_BASE_URL }}
+          VALIDATION_SERVER_PATH: ${{ env.VALIDATION_SERVER_PATH }}
+          VALIDATION_PORT: ${{ env.VALIDATION_PORT }}
+          VALIDATION_MYSQL_ROOT_PASSWORD: ${{ secrets.VALIDATION_MYSQL_ROOT_PASSWORD }}
+          VALIDATION_MYSQL_PASSWORD: ${{ secrets.VALIDATION_MYSQL_PASSWORD }}
+          VALIDATION_REDIS_PASSWORD: ${{ secrets.VALIDATION_REDIS_PASSWORD }}
+          VALIDATION_RESULTS_DIR: ${{ env.VALIDATION_RESULTS_DIR }}
+          VALIDATED_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: VALIDATION_BASE_URL,VALIDATION_SERVER_PATH,VALIDATION_PORT,VALIDATION_MYSQL_ROOT_PASSWORD,VALIDATION_MYSQL_PASSWORD,VALIDATION_REDIS_PASSWORD,VALIDATION_RESULTS_DIR,VALIDATED_SHA
+          script: |
+            set -e
+            mkdir -p "$VALIDATION_SERVER_PATH"
+            if [ ! -d "$VALIDATION_SERVER_PATH/.git" ]; then
+              git clone /opt/halo-blog "$VALIDATION_SERVER_PATH"
+            fi
 
-      - name: Wait for Halo to be ready
+            cd "$VALIDATION_SERVER_PATH"
+            rm -f .git/index.lock .git/refs/remotes/origin/main.lock || true
+            git remote prune origin || true
+            git update-ref -d refs/remotes/origin/main || true
+            git fetch --prune origin
+            git checkout main
+            git reset --hard "$VALIDATED_SHA"
+
+            mkdir -p validation/server "$VALIDATION_RESULTS_DIR"
+            cat > validation/server/.env.validation <<EOF
+MYSQL_ROOT_PASSWORD=$VALIDATION_MYSQL_ROOT_PASSWORD
+MYSQL_PASSWORD=$VALIDATION_MYSQL_PASSWORD
+REDIS_PASSWORD=$VALIDATION_REDIS_PASSWORD
+VALIDATION_PORT=$VALIDATION_PORT
+HALO_VALIDATION_EXTERNAL_URL=$VALIDATION_BASE_URL
+TZ=Asia/Shanghai
+EOF
+
+            docker compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation pull || true
+            docker compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation up -d --remove-orphans
+
+      - name: Wait for validation instance readiness
+        shell: bash
         run: |
           for i in {1..120}; do
-            if curl -sf http://localhost:8090/actuator/health > /dev/null 2>&1; then
-              echo "Halo is ready"
-              break
+            if curl -sf "$VALIDATION_BASE_URL/actuator/health/readiness" > /dev/null 2>&1; then
+              echo "Validation instance is ready"
+              exit 0
             fi
-            if [ $i -eq 120 ]; then
-              echo "Halo failed to start"
-              exit 1
-            fi
-            echo "Waiting for Halo... ($i/120)"
-            sleep 3
+            echo "Waiting for validation instance... ($i/120)"
+            sleep 5
           done
+          echo "Validation instance failed to become ready"
+          exit 1
 
-      - name: Initialize Halo
+      - name: Initialize validation Halo
+        shell: bash
         run: |
           response=$(curl -s -w "\n%{http_code}" \
-            -X POST "$HALO_URL/system/setup" \
+            -X POST "$VALIDATION_BASE_URL/system/setup" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             --data-urlencode "siteTitle=Validation" \
             --data-urlencode "username=admin" \
             --data-urlencode "password=123456" \
             --data-urlencode "email=validation@halo.run" \
             --data-urlencode "language=en" \
-            --data-urlencode "externalUrl=$HALO_URL")
+            --data-urlencode "externalUrl=$VALIDATION_BASE_URL")
           status=$(echo "$response" | tail -1)
           body=$(echo "$response" | sed '$d')
           if [ "$status" != "204" ] && [ "$status" != "409" ]; then
@@ -175,123 +192,143 @@ jobs:
             exit 1
           fi
 
-      - name: Validate APIs
-        run: |
-          chmod +x validation/scripts/validate-apis.sh
-          RESULTS_DIR=halo/build/test-results ./validation/scripts/validate-apis.sh all
-
-      - name: Upload API validation results
-        uses: actions/upload-artifact@v4
+      - name: Run remote API validation
+        uses: appleboy/ssh-action@v1.0.0
+        env:
+          HALO_BASIC_AUTH: ${{ env.HALO_BASIC_AUTH }}
+          VALIDATION_INTERNAL_URL: ${{ env.VALIDATION_INTERNAL_URL }}
+          VALIDATION_RESULTS_DIR: ${{ env.VALIDATION_RESULTS_DIR }}
+          VALIDATION_SERVER_PATH: ${{ env.VALIDATION_SERVER_PATH }}
         with:
-          name: api-validation-results
-          path: halo/build/test-results/api-validation-*.json
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: HALO_BASIC_AUTH,VALIDATION_INTERNAL_URL,VALIDATION_RESULTS_DIR,VALIDATION_SERVER_PATH
+          script: |
+            set -e
+            cd "$VALIDATION_SERVER_PATH"
+            RESULTS_LOG="$VALIDATION_RESULTS_DIR/api-validation.log"
+            RESULTS_DIR="$VALIDATION_RESULTS_DIR" \
+            HALO_URL="$VALIDATION_INTERNAL_URL" \
+            HALO_API_BASE="$VALIDATION_INTERNAL_URL/apis" \
+            HALO_BASIC_AUTH="$HALO_BASIC_AUTH" \
+            ./validation/scripts/validate-apis.sh all | tee "$RESULTS_LOG"
 
-  # ===========================================================================
-  # JOB 4: Load Tests (only on push to main)
-  # ===========================================================================
-  load-tests:
-    name: Load Tests (k6)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Resolve Halo ref
-        id: halo-ref
+            passed=$(awk '/\[INFO\] Passed:/ {print $NF}' "$RESULTS_LOG" | tail -1)
+            failed=$(awk '/\[INFO\] Failed:/ {print $NF}' "$RESULTS_LOG" | tail -1)
+
+            cat > "$VALIDATION_RESULTS_DIR/api-validation-summary.json" <<EOF
+{"passed":${passed:-0},"failed":${failed:-0}}
+EOF
+
+      - name: Run remote load tests
+        uses: appleboy/ssh-action@v1.0.0
+        env:
+          HALO_BASIC_AUTH: ${{ env.HALO_BASIC_AUTH }}
+          VALIDATION_INTERNAL_URL: ${{ env.VALIDATION_INTERNAL_URL }}
+          VALIDATION_RESULTS_DIR: ${{ env.VALIDATION_RESULTS_DIR }}
+          VALIDATION_SERVER_PATH: ${{ env.VALIDATION_SERVER_PATH }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: HALO_BASIC_AUTH,VALIDATION_INTERNAL_URL,VALIDATION_RESULTS_DIR,VALIDATION_SERVER_PATH
+          script: |
+            set -e
+            cd "$VALIDATION_SERVER_PATH"
+            docker run --rm --network host \
+              -v "$PWD/validation:/scripts:ro" \
+              -v "$VALIDATION_RESULTS_DIR:/results" \
+              -e HALO_URL="$VALIDATION_INTERNAL_URL" \
+              -e HALO_BASIC_AUTH="$HALO_BASIC_AUTH" \
+              grafana/k6:0.49.0 run /scripts/api-load.js \
+              --summary-export=/results/load-test-summary.json \
+              --out json=/results/load-test-events.json
+
+      - name: Run remote stress tests
+        uses: appleboy/ssh-action@v1.0.0
+        env:
+          HALO_BASIC_AUTH: ${{ env.HALO_BASIC_AUTH }}
+          VALIDATION_INTERNAL_URL: ${{ env.VALIDATION_INTERNAL_URL }}
+          VALIDATION_RESULTS_DIR: ${{ env.VALIDATION_RESULTS_DIR }}
+          VALIDATION_SERVER_PATH: ${{ env.VALIDATION_SERVER_PATH }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: HALO_BASIC_AUTH,VALIDATION_INTERNAL_URL,VALIDATION_RESULTS_DIR,VALIDATION_SERVER_PATH
+          script: |
+            set -e
+            cd "$VALIDATION_SERVER_PATH"
+            docker run --rm --network host \
+              -v "$PWD/validation:/scripts:ro" \
+              -v "$VALIDATION_RESULTS_DIR:/results" \
+              -e HALO_URL="$VALIDATION_INTERNAL_URL" \
+              -e HALO_BASIC_AUTH="$HALO_BASIC_AUTH" \
+              grafana/k6:0.49.0 run /scripts/stress-test.js \
+              --summary-export=/results/stress-test-summary.json \
+              --out json=/results/stress-test-events.json
+
+      - name: Package remote validation artifacts
+        if: always()
+        uses: appleboy/ssh-action@v1.0.0
+        env:
+          VALIDATION_RESULTS_DIR: ${{ env.VALIDATION_RESULTS_DIR }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: VALIDATION_RESULTS_DIR
+          script: |
+            set -e
+            tar -czf /tmp/validation-results.tgz -C "$VALIDATION_RESULTS_DIR" .
+
+      - name: Download validation artifacts
+        if: always()
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: /tmp/validation-results.tgz
+          target: validation-artifacts
+          overwrite: true
+
+      - name: Extract validation artifacts
+        if: always()
         shell: bash
-        run: echo "sha=$(git ls-tree HEAD halo | awk '{print $3}')" >> "$GITHUB_OUTPUT"
-      - name: Check out Halo
-        uses: actions/checkout@v4
-        with:
-          repository: halo-dev/halo
-          ref: ${{ steps.halo-ref.outputs.sha }}
-          path: halo
-
-      - name: Set up JDK ${{ env.JAVA_VERSION }}
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'temurin'
-
-      - name: Install k6
         run: |
-          sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install k6
-
-      - name: Build Halo
-        run: ./gradlew :application:bootJar --no-daemon
-        working-directory: halo
-
-      - name: Start Halo
-        run: ./gradlew :application:bootRun &
-        working-directory: halo
-        shell: bash
-
-      - name: Wait for Halo to be ready
-        run: |
-          for i in {1..120}; do
-            if curl -sf http://localhost:8090/actuator/health > /dev/null 2>&1; then
-              echo "Halo is ready"
-              break
-            fi
-            if [ $i -eq 120 ]; then
-              echo "Halo failed to start"
-              exit 1
-            fi
-            echo "Waiting for Halo... ($i/120)"
-            sleep 3
-          done
-
-      - name: Initialize Halo
-        run: |
-          response=$(curl -s -w "\n%{http_code}" \
-            -X POST "$HALO_URL/system/setup" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "siteTitle=LoadTest" \
-            --data-urlencode "username=admin" \
-            --data-urlencode "password=123456" \
-            --data-urlencode "email=loadtest@halo.run" \
-            --data-urlencode "language=en" \
-            --data-urlencode "externalUrl=$HALO_URL")
-          status=$(echo "$response" | tail -1)
-          body=$(echo "$response" | sed '$d')
-          if [ "$status" != "204" ] && [ "$status" != "409" ]; then
-            echo "Halo setup failed with status $status"
-            echo "$body"
+          mkdir -p validation-artifacts/test-results
+          archive_path=$(find validation-artifacts -name 'validation-results.tgz' -print -quit)
+          if [ -z "$archive_path" ]; then
+            echo "Validation artifact archive not found"
             exit 1
           fi
+          tar -xzf "$archive_path" -C validation-artifacts/test-results
 
-      - name: Prepare load test output directory
-        run: mkdir -p halo/build/test-results
-
-      - name: Run Load Tests
-        run: |
-          k6 run validation/api-load.js --duration 120s --vus 50 --out json=halo/build/test-results/load-test-results.json
-
-      - name: Run Stress Tests
-        run: |
-          k6 run validation/stress-test.js --duration 180s --out json=halo/build/test-results/stress-test-results.json
-
-      - name: Upload load test results
+      - name: Upload validation artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: load-test-results
-          path: halo/build/test-results/*-test-results.json
+          name: validation-server-results
+          path: validation-artifacts/test-results
 
-  # ===========================================================================
-  # JOB 5: Code Coverage
-  # ===========================================================================
   coverage:
     name: Code Coverage Report
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Resolve Halo ref
         id: halo-ref
         shell: bash
         run: echo "sha=$(git ls-tree HEAD halo | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
       - name: Check out Halo
         uses: actions/checkout@v4
         with:
@@ -303,7 +340,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'temurin'
+          distribution: temurin
 
       - name: Gradle cache
         uses: gradle/gradle-build-action@v3
@@ -322,3 +359,57 @@ jobs:
           name: coverage-report
           path: |
             halo/**/build/reports/jacoco/test/*.xml
+
+  validation-summary:
+    name: Validation Summary
+    if: always()
+    needs: [unit-tests, integration-tests, validation-server-tests, coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Download validation artifacts
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: validation-server-results
+          path: artifacts/validation-server-results
+
+      - name: Write workflow status summary
+        shell: bash
+        run: |
+          {
+            echo "# Halo Validation Pipeline Summary"
+            echo
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| Unit Tests | ${{ needs.unit-tests.result }} |"
+            echo "| Integration Tests | ${{ needs.integration-tests.result }} |"
+            echo "| Validation Instance Tests | ${{ needs.validation-server-tests.result }} |"
+            echo "| Coverage | ${{ needs.coverage.result }} |"
+            echo
+            echo "Validation Base URL: \`$VALIDATION_BASE_URL\`"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Render performance summary
+        if: always()
+        shell: bash
+        run: |
+          api_summary=$(find artifacts/validation-server-results -name 'api-validation-summary.json' -print -quit)
+          load_summary=$(find artifacts/validation-server-results -name 'load-test-summary.json' -print -quit)
+          load_events=$(find artifacts/validation-server-results -name 'load-test-events.json' -print -quit)
+          stress_summary=$(find artifacts/validation-server-results -name 'stress-test-summary.json' -print -quit)
+          stress_events=$(find artifacts/validation-server-results -name 'stress-test-events.json' -print -quit)
+          node validation/scripts/render-k6-summary.js \
+            --api-summary "${api_summary:-}" \
+            --load-summary "${load_summary:-}" \
+            --load-events "${load_events:-}" \
+            --stress-summary "${stress_summary:-}" \
+            --stress-events "${stress_events:-}" >> "$GITHUB_STEP_SUMMARY"
