@@ -1,19 +1,19 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$workflowPath = Join-Path $repoRoot ".github\workflows\validation.yml"
+$composePath = Join-Path $repoRoot "validation\server\docker-compose.validation.yml"
 $scriptPath = Join-Path $repoRoot "validation\scripts\validate-apis.sh"
 
-$workflow = Get-Content -Raw $workflowPath
+$compose = Get-Content -Raw $composePath
 $script = Get-Content -Raw $scriptPath
 $errors = @()
 
-if ($workflow -notmatch "(?ms)api-validation:.*?Start Halo.*?env:\s*(?:[^\n]*\n)*?\s+HALO_SECURITY_BASIC_AUTH_DISABLED:\s*['""]?false['""]?") {
-    $errors += "API validation workflow must enable Basic Auth before bootRun."
+if ($compose -notmatch "HALO_SECURITY_BASIC_AUTH_DISABLED=false") {
+    $errors += "Validation stack must enable Basic Auth."
 }
 
-if ($workflow -notmatch "(?ms)api-validation:.*?Start Halo.*?env:\s*(?:[^\n]*\n)*?\s+SPRINGDOC_API_DOCS_ENABLED:\s*['""]?true['""]?") {
-    $errors += "API validation workflow must enable springdoc API docs before bootRun."
+if ($compose -notmatch "SPRINGDOC_API_DOCS_ENABLED=true") {
+    $errors += "Validation stack must enable springdoc API docs."
 }
 
 if ($script -notmatch "Accept: application/json") {
