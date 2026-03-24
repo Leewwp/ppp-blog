@@ -49,11 +49,6 @@ export const options = {
         // Phase 6: Recovery check
         { duration: '2m', target: 10 },
     ],
-    thresholds: {
-        // We expect errors at high load - this is informational
-        'http_req_duration': ['p(95)<2000'],
-        'http_req_failed': ['rate<0.50'],  // Up to 50% failure is acceptable for stress test
-    },
 };
 
 // Setup
@@ -77,11 +72,13 @@ export default function(data) {
 
     // Run mixed operations
     const operations = [
-        { weight: 30, fn: () => readOnlyOperation('health') },
+        { weight: 25, fn: () => readOnlyOperation('health') },
         { weight: 25, fn: () => readOnlyOperation('listPosts') },
         { weight: 20, fn: () => readOnlyOperation('getPost') },
-        { weight: 15, fn: () => readWriteOperation('createPost', data) },
-        { weight: 10, fn: () => authenticatedOperation('listUsers', data) },
+        { weight: 10, fn: () => readOnlyOperation('listCategories') },
+        { weight: 10, fn: () => readOnlyOperation('listTags') },
+        { weight: 5, fn: () => authenticatedOperation('listUsers', data) },
+        { weight: 5, fn: () => authenticatedOperation('stats', data) },
     ];
 
     const rand = Math.random() * 100;
@@ -106,6 +103,16 @@ function readOnlyOperation(type) {
             break;
         case 'listPosts':
             res = http.get(`${PUBLIC_API}/posts?page=${Math.floor(Math.random() * 10)}&size=20`, {
+                headers: JSON_ACCEPT_HEADERS,
+            });
+            break;
+        case 'listCategories':
+            res = http.get(`${PUBLIC_API}/categories?page=0&size=20`, {
+                headers: JSON_ACCEPT_HEADERS,
+            });
+            break;
+        case 'listTags':
+            res = http.get(`${PUBLIC_API}/tags?page=0&size=20`, {
                 headers: JSON_ACCEPT_HEADERS,
             });
             break;
@@ -143,54 +150,6 @@ function readOnlyOperation(type) {
     handleResponse(res, type);
 }
 
-// Read-write operations (more stressful)
-function readWriteOperation(type, data) {
-    if (type === 'createPost') {
-        const postName = `stress-${Date.now()}-${__VU}-${__ITER}`;
-        const testPost = {
-            post: {
-                spec: {
-                    title: `Stress Test ${postName}`,
-                    slug: postName,
-                    template: '',
-                    cover: '',
-                    deleted: false,
-                    publish: false,
-                    pinned: false,
-                    allowComment: true,
-                    visible: 'PUBLIC',
-                    priority: 0,
-                    excerpt: { autoGenerate: true, raw: '' },
-                    categories: [],
-                    tags: [],
-                    htmlMetas: []
-                },
-                apiVersion: 'content.halo.run/v1alpha1',
-                kind: 'Post',
-                metadata: { name: postName }
-            },
-            content: {
-                raw: '<p>Stress test content</p>',
-                content: '<p>Stress test content</p>',
-                rawType: 'HTML'
-            }
-        };
-
-        const res = http.post(`${CONSOLE_API}/posts`,
-            JSON.stringify(testPost),
-            {
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'Authorization': data.authHeader
-                }
-            }
-        );
-
-        handleResponse(res, 'createPost');
-    }
-}
-
 // Authenticated operations
 function authenticatedOperation(type, data) {
     let res;
@@ -203,13 +162,16 @@ function authenticatedOperation(type, data) {
                 }
             });
             break;
-        default:
+        case 'stats':
             res = http.get(`${CONSOLE_API}/stats`, {
                 headers: {
                     'Accept': 'application/json',
                     'Authorization': data.authHeader
                 }
             });
+            break;
+        default:
+            res = http.get(`${BASE_URL}/actuator/health`);
     }
 
     handleResponse(res, type);

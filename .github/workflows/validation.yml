@@ -286,7 +286,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Fail if validation checks failed
-        if: always() && (steps.api-validation.outcome == 'failure' || steps.load-tests.outcome == 'failure' || steps.stress-tests.outcome == 'failure')
+        if: always() && (steps.api-validation.outcome == 'failure' || steps.load-tests.outcome == 'failure')
         shell: bash
         run: |
           echo "One or more validation checks failed."

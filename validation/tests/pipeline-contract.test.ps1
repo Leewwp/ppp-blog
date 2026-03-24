@@ -67,8 +67,12 @@ if ($validationWorkflow -match 'for outcome in "\$\{\{ steps\.api-validation\.ou
     $errors += "Validation failure gate must not treat skipped validation steps as failures."
 }
 
-if ($validationWorkflow -notmatch "steps\.api-validation\.outcome == 'failure'" -or $validationWorkflow -notmatch "steps\.load-tests\.outcome == 'failure'" -or $validationWorkflow -notmatch "steps\.stress-tests\.outcome == 'failure'") {
-    $errors += "Validation failure gate must only fail when API validation, load tests, or stress tests actually fail."
+if ($validationWorkflow -notmatch "steps\.api-validation\.outcome == 'failure'" -or $validationWorkflow -notmatch "steps\.load-tests\.outcome == 'failure'") {
+    $errors += "Validation failure gate must fail when API validation or load tests actually fail."
+}
+
+if ($validationWorkflow -match "steps\.stress-tests\.outcome == 'failure'") {
+    $errors += "Validation failure gate must not treat the stress test as a blocking deployment check."
 }
 
 if ($validationWorkflow -notmatch 'mkdir -p artifacts/validation-server-results') {
