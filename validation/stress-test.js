@@ -233,7 +233,6 @@ export function handleSummary(data) {
 
     return {
         'stdout': textSummary(data, totalRequests, failedReqs),
-        'stress-test-results.json': JSON.stringify(data),
     };
 }
 
