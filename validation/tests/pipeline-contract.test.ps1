@@ -29,6 +29,10 @@ if ($validationWorkflow -notmatch "appleboy/ssh-action") {
     $errors += "Validation workflow must deploy or manage the remote validation instance over SSH."
 }
 
+if ($validationWorkflow -match "<<EOF") {
+    $errors += "Validation workflow must not use inline heredocs inside YAML run/script blocks because they can break YAML indentation."
+}
+
 if ($deployWorkflow -notmatch "workflow_run") {
     $errors += "Production deploy workflow must be triggered by workflow_run."
 }

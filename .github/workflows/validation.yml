@@ -146,14 +146,14 @@ jobs:
             git reset --hard "$VALIDATED_SHA"
 
             mkdir -p validation/server "$VALIDATION_RESULTS_DIR"
-            cat > validation/server/.env.validation <<EOF
-MYSQL_ROOT_PASSWORD=$VALIDATION_MYSQL_ROOT_PASSWORD
-MYSQL_PASSWORD=$VALIDATION_MYSQL_PASSWORD
-REDIS_PASSWORD=$VALIDATION_REDIS_PASSWORD
-VALIDATION_PORT=$VALIDATION_PORT
-HALO_VALIDATION_EXTERNAL_URL=$VALIDATION_BASE_URL
-TZ=Asia/Shanghai
-EOF
+            {
+              echo "MYSQL_ROOT_PASSWORD=$VALIDATION_MYSQL_ROOT_PASSWORD"
+              echo "MYSQL_PASSWORD=$VALIDATION_MYSQL_PASSWORD"
+              echo "REDIS_PASSWORD=$VALIDATION_REDIS_PASSWORD"
+              echo "VALIDATION_PORT=$VALIDATION_PORT"
+              echo "HALO_VALIDATION_EXTERNAL_URL=$VALIDATION_BASE_URL"
+              echo "TZ=Asia/Shanghai"
+            } > validation/server/.env.validation
 
             docker compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation pull || true
             docker compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation up -d --remove-orphans
@@ -218,9 +218,7 @@ EOF
             passed=$(awk '/\[INFO\] Passed:/ {print $NF}' "$RESULTS_LOG" | tail -1)
             failed=$(awk '/\[INFO\] Failed:/ {print $NF}' "$RESULTS_LOG" | tail -1)
 
-            cat > "$VALIDATION_RESULTS_DIR/api-validation-summary.json" <<EOF
-{"passed":${passed:-0},"failed":${failed:-0}}
-EOF
+            printf '{"passed":%s,"failed":%s}\n' "${passed:-0}" "${failed:-0}" > "$VALIDATION_RESULTS_DIR/api-validation-summary.json"
 
       - name: Run remote load tests
         uses: appleboy/ssh-action@v1.0.0
