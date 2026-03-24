@@ -1,17 +1,11 @@
 name: Deploy Full Stack
 
 on:
-  push:
-    branches:
-      - main
-      - master
-    paths-ignore:
-      - "services/**"
-      - "plugins/**"
-      - "docs/dashboard-sheet-code.html"
-      - "docs/dashboard-prompt.html"
-      - ".github/workflows/deploy-services.yml"
-      - ".github/workflows/deploy-plugins.yml"
+  workflow_run:
+    workflows:
+      - Halo Validation Pipeline
+    types:
+      - completed
   workflow_dispatch:
 
 concurrency:
@@ -20,36 +14,42 @@ concurrency:
 
 jobs:
   deploy:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to server via SSH
+      - name: Deploy validated commit to server via SSH
         uses: appleboy/ssh-action@v1.0.0
+        env:
+          DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          envs: DEPLOY_SHA
           script: |
             set -e
             cd /opt/halo-blog
-            
-            # Pull latest code
+
             rm -f .git/index.lock .git/refs/remotes/origin/main.lock || true
             git remote prune origin || true
             git update-ref -d refs/remotes/origin/main || true
             git fetch --prune origin
             git checkout main
-            git reset --hard origin/main
-            
-            # Pull latest images if available and recreate changed containers without full shutdown
+            git reset --hard "$DEPLOY_SHA"
+
             docker-compose pull || true
             docker-compose up -d --remove-orphans
-            
-            # Wait for services
+
             sleep 10
             docker-compose ps
-            
-            echo "Deployment completed!"
+
+            echo "Production deployment completed for $DEPLOY_SHA"

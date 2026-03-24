@@ -31,6 +31,7 @@ const API_BASE = `${BASE_URL}/apis`;
 const PUBLIC_API = `${API_BASE}/api.content.halo.run/v1alpha1`;
 const CONSOLE_API = `${API_BASE}/api.console.halo.run/v1alpha1`;
 const BASIC_AUTH = __ENV.HALO_BASIC_AUTH || 'Basic YWRtaW46MTIzNDU2';
+const JSON_ACCEPT_HEADERS = { Accept: 'application/json' };
 
 // Stress test configuration - aggressive escalation
 export const options = {
@@ -104,10 +105,14 @@ function readOnlyOperation(type) {
             res = http.get(`${BASE_URL}/actuator/health`);
             break;
         case 'listPosts':
-            res = http.get(`${PUBLIC_API}/posts?page=${Math.floor(Math.random() * 10)}&size=20`);
+            res = http.get(`${PUBLIC_API}/posts?page=${Math.floor(Math.random() * 10)}&size=20`, {
+                headers: JSON_ACCEPT_HEADERS,
+            });
             break;
         case 'getPost':
-            const listRes = http.get(`${PUBLIC_API}/posts?page=0&size=1`);
+            const listRes = http.get(`${PUBLIC_API}/posts?page=0&size=1`, {
+                headers: JSON_ACCEPT_HEADERS,
+            });
             if (listRes.status !== 200) {
                 errors.add(1);
                 failedRequests.add(1);
@@ -122,7 +127,9 @@ function readOnlyOperation(type) {
                     failedRequests.add(1);
                     return;
                 }
-                res = http.get(`${PUBLIC_API}/posts/${postName}`);
+                res = http.get(`${PUBLIC_API}/posts/${postName}`, {
+                    headers: JSON_ACCEPT_HEADERS,
+                });
             } catch (e) {
                 errors.add(1);
                 failedRequests.add(1);
@@ -173,6 +180,7 @@ function readWriteOperation(type, data) {
             JSON.stringify(testPost),
             {
                 headers: {
+                    'Accept': 'application/json',
                     'Content-Type': 'application/json',
                     'Authorization': data.authHeader
                 }
@@ -189,12 +197,18 @@ function authenticatedOperation(type, data) {
     switch (type) {
         case 'listUsers':
             res = http.get(`${CONSOLE_API}/users?page=0&size=10`, {
-                headers: { 'Authorization': data.authHeader }
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': data.authHeader
+                }
             });
             break;
         default:
             res = http.get(`${CONSOLE_API}/stats`, {
-                headers: { 'Authorization': data.authHeader }
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': data.authHeader
+                }
             });
     }
 
