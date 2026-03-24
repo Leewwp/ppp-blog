@@ -35,6 +35,14 @@ if ($stressScript -match "thresholds\s*:") {
     $errors += "Stress test should report metrics without hard gating on k6 thresholds."
 }
 
+if ($validationWorkflow -notmatch "chmod 0777 validation-artifacts validation-artifacts/test-results") {
+    $errors += "Validation workflow must make the local k6 results directory writable before mounting it into the container."
+}
+
+if ($validationWorkflow -notmatch '--user "\$\(id -u\):\$\(id -g\)"') {
+    $errors += "Validation workflow must run k6 with the runner uid/gid so summary outputs can be written to the mounted results directory."
+}
+
 if ($validationWorkflow -match "steps\.stress-tests\.outcome == 'failure'") {
     $errors += "Validation workflow must not gate deployment on the informational stress test outcome."
 }
