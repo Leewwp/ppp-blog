@@ -10,7 +10,6 @@ on:
 env:
   JAVA_VERSION: '21'
   HALO_BASIC_AUTH: Basic YWRtaW46MTIzNDU2
-  VALIDATION_REPOSITORY: https://github.com/${{ github.repository }}.git
   VALIDATION_SERVER_PATH: /opt/halo-validation
   VALIDATION_PORT: '18090'
   VALIDATION_BASE_URL: http://${{ secrets.SERVER_HOST }}:18090
@@ -114,23 +113,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Encode validation stack assets
+        shell: bash
+        run: |
+          echo "VALIDATION_DOCKER_COMPOSE_B64=$(base64 -w0 validation/server/docker-compose.validation.yml)" >> "$GITHUB_ENV"
+          echo "VALIDATION_SETUP_SCRIPT_B64=$(base64 -w0 validation/server/setup-validation.sh)" >> "$GITHUB_ENV"
+          echo "VALIDATION_ENV_EXAMPLE_B64=$(base64 -w0 validation/server/.env.validation.example)" >> "$GITHUB_ENV"
+          echo "VALIDATION_MYSQL_INIT_B64=$(base64 -w0 mysql-init/02-comment-tables.sql)" >> "$GITHUB_ENV"
+
       - name: Deploy validation instance via SSH
         uses: appleboy/ssh-action@v1.0.0
         env:
           VALIDATION_BASE_URL: ${{ env.VALIDATION_BASE_URL }}
-          VALIDATION_REPOSITORY: ${{ env.VALIDATION_REPOSITORY }}
           VALIDATION_SERVER_PATH: ${{ env.VALIDATION_SERVER_PATH }}
           VALIDATION_PORT: ${{ env.VALIDATION_PORT }}
+          VALIDATION_DOCKER_COMPOSE_B64: ${{ env.VALIDATION_DOCKER_COMPOSE_B64 }}
+          VALIDATION_SETUP_SCRIPT_B64: ${{ env.VALIDATION_SETUP_SCRIPT_B64 }}
+          VALIDATION_ENV_EXAMPLE_B64: ${{ env.VALIDATION_ENV_EXAMPLE_B64 }}
+          VALIDATION_MYSQL_INIT_B64: ${{ env.VALIDATION_MYSQL_INIT_B64 }}
           VALIDATION_MYSQL_ROOT_PASSWORD: ${{ secrets.VALIDATION_MYSQL_ROOT_PASSWORD }}
           VALIDATION_MYSQL_PASSWORD: ${{ secrets.VALIDATION_MYSQL_PASSWORD }}
           VALIDATION_REDIS_PASSWORD: ${{ secrets.VALIDATION_REDIS_PASSWORD }}
-          VALIDATED_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          envs: VALIDATION_BASE_URL,VALIDATION_REPOSITORY,VALIDATION_SERVER_PATH,VALIDATION_PORT,VALIDATION_MYSQL_ROOT_PASSWORD,VALIDATION_MYSQL_PASSWORD,VALIDATION_REDIS_PASSWORD,VALIDATED_SHA
+          envs: VALIDATION_BASE_URL,VALIDATION_SERVER_PATH,VALIDATION_PORT,VALIDATION_DOCKER_COMPOSE_B64,VALIDATION_SETUP_SCRIPT_B64,VALIDATION_ENV_EXAMPLE_B64,VALIDATION_MYSQL_INIT_B64,VALIDATION_MYSQL_ROOT_PASSWORD,VALIDATION_MYSQL_PASSWORD,VALIDATION_REDIS_PASSWORD
           script: |
             set -e
 
@@ -145,16 +154,23 @@ jobs:
               fi
             }
 
-            mkdir -p "$VALIDATION_SERVER_PATH"
-            if [ ! -d "$VALIDATION_SERVER_PATH/.git" ]; then
-              rm -rf "$VALIDATION_SERVER_PATH"
-              git clone "$VALIDATION_REPOSITORY" "$VALIDATION_SERVER_PATH"
-            fi
+            decode_to_file() {
+              local encoded_value="$1"
+              local target_path="$2"
+              printf '%s' "$encoded_value" | base64 --decode > "$target_path"
+            }
 
-            cd "$VALIDATION_SERVER_PATH"
-            git remote set-url origin "$VALIDATION_REPOSITORY"
-            git fetch --depth=1 origin "$VALIDATED_SHA"
-            git checkout --force "$VALIDATED_SHA"
+            mkdir -p \
+              "$VALIDATION_SERVER_PATH/validation/server" \
+              "$VALIDATION_SERVER_PATH/validation/build/test-results" \
+              "$VALIDATION_SERVER_PATH/mysql-init"
+
+            decode_to_file "$VALIDATION_DOCKER_COMPOSE_B64" "$VALIDATION_SERVER_PATH/validation/server/docker-compose.validation.yml"
+            decode_to_file "$VALIDATION_SETUP_SCRIPT_B64" "$VALIDATION_SERVER_PATH/validation/server/setup-validation.sh"
+            decode_to_file "$VALIDATION_ENV_EXAMPLE_B64" "$VALIDATION_SERVER_PATH/validation/server/.env.validation.example"
+            decode_to_file "$VALIDATION_MYSQL_INIT_B64" "$VALIDATION_SERVER_PATH/mysql-init/02-comment-tables.sql"
+            chmod +x "$VALIDATION_SERVER_PATH/validation/server/setup-validation.sh"
+
             {
               echo "MYSQL_ROOT_PASSWORD=$VALIDATION_MYSQL_ROOT_PASSWORD"
               echo "MYSQL_PASSWORD=$VALIDATION_MYSQL_PASSWORD"
@@ -164,6 +180,7 @@ jobs:
               echo "TZ=Asia/Shanghai"
             } > "$VALIDATION_SERVER_PATH/validation/server/.env.validation"
 
+            cd "$VALIDATION_SERVER_PATH"
             compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation pull || true
             compose -f validation/server/docker-compose.validation.yml --env-file validation/server/.env.validation up -d --remove-orphans
 
