@@ -49,6 +49,14 @@ if ($validationWorkflow -notmatch "Prepare validation workspace bundle") {
     $errors += "Validation workflow must bundle validation assets on the runner before syncing them to the server."
 }
 
+if ($validationWorkflow -match 'for outcome in "\$\{\{ steps\.api-validation\.outcome \}\}" "\$\{\{ steps\.load-tests\.outcome \}\}" "\$\{\{ steps\.stress-tests\.outcome \}\}"') {
+    $errors += "Validation failure gate must not treat skipped validation steps as failures."
+}
+
+if ($validationWorkflow -notmatch "steps\.api-validation\.outcome == 'failure'" -or $validationWorkflow -notmatch "steps\.load-tests\.outcome == 'failure'" -or $validationWorkflow -notmatch "steps\.stress-tests\.outcome == 'failure'") {
+    $errors += "Validation failure gate must only fail when API validation, load tests, or stress tests actually fail."
+}
+
 if ($validationWorkflow -notmatch 'mkdir -p artifacts/validation-server-results') {
     $errors += "Validation summary must create the artifact directory before searching for result files."
 }
