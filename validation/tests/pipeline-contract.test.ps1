@@ -51,6 +51,14 @@ if ($validationWorkflow -notmatch "Prepare validation workspace bundle") {
     $errors += "Validation workflow must bundle validation assets on the runner before syncing them to the server."
 }
 
+if ($validationWorkflow -notmatch 'POST "\$VALIDATION_BASE_URL/system/setup"' -or $validationWorkflow -notmatch 'Accept: application/json') {
+    $errors += "Validation workflow must initialize Halo with an explicit JSON Accept header."
+}
+
+if ($validationWorkflow -notmatch '\[ "\$status" != "204" \] && \[ "\$status" != "302" \] && \[ "\$status" != "409" \]') {
+    $errors += "Validation workflow must treat 302 and 409 setup responses as idempotent initialization outcomes."
+}
+
 if ($validationWorkflow -notmatch "docker compose version" -or $validationWorkflow -notmatch "command -v docker-compose") {
     $errors += "Validation workflow must support both docker compose and docker-compose on the server."
 }
