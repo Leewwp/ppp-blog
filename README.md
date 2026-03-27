@@ -43,6 +43,7 @@ docker-compose up -d
 详细部署步骤请查看：
 - [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - 手动部署完整指南
 - [AUTO_DEPLOYMENT.md](AUTO_DEPLOYMENT.md) - 自动化部署完整指南
+- [docs/MONITORING_ACCESS_GUIDE.md](docs/MONITORING_ACCESS_GUIDE.md) - Grafana 域名接入与 Prometheus SSH 隧道指南
 
 ## 项目结构
 
@@ -336,6 +337,7 @@ docker-compose restart redis
 
 - [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - 服务器部署完整指南
 - [AUTO_DEPLOYMENT.md](AUTO_DEPLOYMENT.md) - 自动化部署完整指南
+- [docs/MONITORING_ACCESS_GUIDE.md](docs/MONITORING_ACCESS_GUIDE.md) - Grafana 域名接入与 Prometheus SSH 隧道指南
 - [THEME_SETUP.md](THEME_SETUP.md) - Joe3.0 主题配置指南
 
 ## 贡献
